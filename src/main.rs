@@ -9,12 +9,8 @@ use url::Url;
 
 // TODO: Error struct?
 
-fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-
-    println!("Hello, world!");
-
-    // TODO: authenticate to Twitter
+// Autenticate to Twitter.
+fn authenticate() -> Result<(String, String)> {
     let client_id =
         env::var("TWITTER_CLIENT_ID").context("Twitter OAuth2 client id is not available")?;
     let client_secret = env::var("TWITTER_CLIENT_SECRET")
@@ -56,22 +52,30 @@ fn main() -> Result<()> {
         })
         .context("no state was returned")?;
     if state.secret() != &state_returned {
-        bail!("invalid state");
+        bail!("invalid csrf state");
     }
 
     let result = client
         .exchange_code(AuthorizationCode::new(auth_code))
         .set_pkce_verifier(pkce_verifier)
         .request(http_client)?;
-    let access_token = result.access_token().secret();
+    let access_token = result.access_token().secret().to_owned();
     let refresh_token = match result.refresh_token() {
         Some(x) => x.secret(),
         None => "",
     }
     .to_owned();
-    println!("{:?}", access_token);
+
+    Ok((access_token, refresh_token))
+}
+
+fn main() -> Result<()> {
+    dotenvy::dotenv().ok();
+
+    let (access_token, refresh_token) = authenticate()?;
 
     // TODO: listen to request over sockets...
+
     // TODO: obtain timeline tweets from twitter API
     // TODO: call filters in Lua
     // TODO: return filtered tweets over the socket
