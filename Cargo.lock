@@ -27,6 +27,8 @@ dependencies = [
  "anyhow",
  "dotenvy",
  "oauth2",
+ "reqwest",
+ "serde_json",
  "thiserror",
  "url",
 ]

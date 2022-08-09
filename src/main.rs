@@ -7,6 +7,8 @@ use oauth2::{
 };
 use url::Url;
 
+mod api;
+
 // TODO: Error struct?
 
 // Autenticate to Twitter.
