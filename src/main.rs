@@ -1,18 +1,40 @@
 use std::{borrow::Cow, env};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context};
+use error::AppError;
 use oauth2::{
-    basic::BasicClient, reqwest::http_client, AuthUrl, AuthorizationCode, ClientId, ClientSecret,
-    CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
+    ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use url::Url;
 
 mod api;
+mod error;
+mod tweet;
 
-// TODO: Error struct?
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
+    dotenvy::dotenv().ok();
+
+    let (access_token, refresh_token) = authenticate().await?;
+    let client = api::ApiClient::new(access_token).await?;
+    let tweets = client.timeline(None).await?;
+    println!("{:?}", tweets);
+
+    // TODO: listen to request over sockets...
+
+    // TODO: obtain timeline tweets from twitter API
+    // TODO: call filters in Lua
+    // TODO: return filtered tweets over the socket
+    // TODO: mock frontend
+    // TODO: socket protocol?
+
+    Ok(())
+}
 
 // Autenticate to Twitter.
-fn authenticate() -> Result<(String, String)> {
+// TODO: cache access token / refresh tokens locally?
+async fn authenticate() -> Result<(String, String), AppError> {
     let client_id =
         env::var("TWITTER_CLIENT_ID").context("Twitter OAuth2 client id is not available")?;
     let client_secret = env::var("TWITTER_CLIENT_SECRET")
@@ -36,7 +58,9 @@ fn authenticate() -> Result<(String, String)> {
 
     let mut redirected_url = String::new();
     let stdin = std::io::stdin();
-    stdin.read_line(&mut redirected_url)?;
+    stdin
+        .read_line(&mut redirected_url)
+        .context("could not read STDIN")?;
     let pairs = Url::parse(&redirected_url)?;
     let auth_code = pairs
         .query_pairs()
@@ -54,13 +78,15 @@ fn authenticate() -> Result<(String, String)> {
         })
         .context("no state was returned")?;
     if state.secret() != &state_returned {
-        bail!("invalid csrf state");
+        return Err(AppError::OAuth(anyhow!("invalid csrf state")));
     }
 
     let result = client
         .exchange_code(AuthorizationCode::new(auth_code))
         .set_pkce_verifier(pkce_verifier)
-        .request(http_client)?;
+        .request_async(async_http_client)
+        .await
+        .context("failed to exchange authorization code for access token")?;
     let access_token = result.access_token().secret().to_owned();
     let refresh_token = match result.refresh_token() {
         Some(x) => x.secret(),
@@ -71,29 +97,15 @@ fn authenticate() -> Result<(String, String)> {
     Ok((access_token, refresh_token))
 }
 
-fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-
-    let (access_token, refresh_token) = authenticate()?;
-
-    // TODO: listen to request over sockets...
-
-    // TODO: obtain timeline tweets from twitter API
-    // TODO: call filters in Lua
-    // TODO: return filtered tweets over the socket
-    // TODO: mock frontend
-    // TODO: socket protocol?
-
-    Ok(())
-}
-
-fn create_client(id: String, secret: String) -> Result<BasicClient> {
+fn create_client(id: String, secret: String) -> Result<BasicClient, AppError> {
     Ok(BasicClient::new(
         ClientId::new(id),
         Some(ClientSecret::new(secret)),
-        AuthUrl::new("https://twitter.com/i/oauth2/authorize".to_owned())?,
-        Some(TokenUrl::new(
-            "https://api.twitter.com/2/oauth2/token".to_owned(),
-        )?),
+        AuthUrl::new("https://twitter.com/i/oauth2/authorize".to_owned())
+            .map_err(|x| AppError::OAuth(x.into()))?,
+        Some(
+            TokenUrl::new("https://api.twitter.com/2/oauth2/token".to_owned())
+                .map_err(|x| AppError::OAuth(x.into()))?,
+        ),
     ))
 }
