@@ -39,7 +39,7 @@ impl ApiClient {
         let id = user_data["data"]["id"]
             .as_str()
             .map(String::from)
-            .ok_or(AppError::ApiResponseNotFound("id".to_owned()))?;
+            .ok_or_else(|| AppError::ApiResponseNotFound("id".to_owned()))?;
         Ok(id)
     }
 
@@ -50,7 +50,7 @@ impl ApiClient {
             self.user_id
         );
         let body = match since_id {
-            Some(id) => json!({ "since_id": since_id }).to_string(),
+            Some(since_id) => json!({ "since_id": since_id }).to_string(),
             None => "".to_string(),
         };
         let json = self
