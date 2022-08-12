@@ -1,4 +1,4 @@
-use std::{borrow::Cow, env};
+use std::{borrow::Cow, env, io::Read, os::unix::net::UnixListener};
 
 use anyhow::{anyhow, Context};
 use error::AppError;
@@ -22,6 +22,20 @@ async fn main() -> Result<(), AppError> {
     println!("{:?}", tweets);
 
     // TODO: listen to request over sockets...
+    let sock_path = env::var("SOCKET_PATH")?;
+    let listener = UnixListener::bind(sock_path)?;
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                let mut payload = String::new();
+                stream.read_to_string(&mut payload)?;
+                let json = serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
+                println!("{:?}", json);
+            }
+            Err(err) => continue,
+        }
+    }
 
     // TODO: call filters in Lua
     // TODO: return filtered tweets over the socket
@@ -34,10 +48,8 @@ async fn main() -> Result<(), AppError> {
 // Autenticate to Twitter.
 // TODO: cache access token / refresh tokens locally?
 async fn authenticate() -> Result<(String, String), AppError> {
-    let client_id =
-        env::var("TWITTER_CLIENT_ID").context("Twitter OAuth2 client id is not available")?;
-    let client_secret = env::var("TWITTER_CLIENT_SECRET")
-        .context("Twitter OAuth2 client secret is not available")?;
+    let client_id = env::var("TWITTER_CLIENT_ID")?;
+    let client_secret = env::var("TWITTER_CLIENT_SECRET")?;
 
     let client = create_client(client_id, client_secret)?
         .set_redirect_uri(RedirectUrl::new("https://localhost".to_owned())?);
