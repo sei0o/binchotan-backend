@@ -1,4 +1,4 @@
-use std::{borrow::Cow, env, io::Read, os::unix::net::UnixListener};
+use std::{borrow::Cow, collections::HashMap, env, io::Read, os::unix::net::UnixListener};
 
 use anyhow::{anyhow, Context};
 use error::AppError;
@@ -8,7 +8,10 @@ use oauth2::{
 };
 use url::Url;
 
+use crate::connection::{Request, RequestParams};
+
 mod api;
+mod connection;
 mod error;
 mod tweet;
 
@@ -18,10 +21,7 @@ async fn main() -> Result<(), AppError> {
 
     let (access_token, refresh_token) = authenticate().await?;
     let client = api::ApiClient::new(access_token).await?;
-    let tweets = client.timeline(None).await?;
-    println!("{:?}", tweets);
 
-    // TODO: listen to request over sockets...
     let sock_path = env::var("SOCKET_PATH")?;
     let listener = UnixListener::bind(sock_path)?;
 
@@ -30,8 +30,24 @@ async fn main() -> Result<(), AppError> {
             Ok(mut stream) => {
                 let mut payload = String::new();
                 stream.read_to_string(&mut payload)?;
-                let json = serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                println!("{:?}", json);
+                let req: Request =
+                    serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
+                println!("{:?}", req);
+                req.validate()?;
+
+                match req.params {
+                    RequestParams::Plain {
+                        http_method,
+                        endpoint,
+                        api_params,
+                    } => {
+                        todo!()
+                    }
+                    RequestParams::HomeTimeline(api_params) => {
+                        let tweets = client.timeline(&api_params).await?;
+                        println!("{:?}", tweets);
+                    }
+                }
             }
             Err(err) => continue,
         }

@@ -8,7 +8,7 @@ pub enum AppError {
     #[error("reached rate limit for Twitter API")]
     ApiRateLimit,
     #[error("could not parse the API response")]
-    ApiResponseParse(#[from] serde_json::Error),
+    ApiResponseParse(serde_json::Error),
     #[error("field {0} was not found in the API response")]
     ApiResponseNotFound(String),
     #[error("failed to request the API")]
@@ -21,4 +21,8 @@ pub enum AppError {
     SocketBind(#[from] std::io::Error),
     #[error("could not parse the socket payload")]
     SocketPayloadParse(serde_json::Error),
+    #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
+    JsonRpcVersion(String),
+    #[error("could not parse the parameters in the request")]
+    JsonRpcParamsParse(serde_json::Error),
 }

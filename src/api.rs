@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use reqwest::header::CONTENT_TYPE;
 use reqwest::Client;
 use serde_json::json;
@@ -35,7 +37,8 @@ impl ApiClient {
             .await?
             .text()
             .await?;
-        let user_data: serde_json::Value = serde_json::from_str(&json)?;
+        let user_data: serde_json::Value =
+            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
         let id = user_data["data"]["id"]
             .as_str()
             .map(String::from)
@@ -44,15 +47,15 @@ impl ApiClient {
     }
 
     /// Calls `users/:id/timelines/reverse_chronological` endpoint to fetch the home timeline of the user.
-    pub async fn timeline(&self, since_id: Option<&str>) -> Result<Vec<Tweet>, AppError> {
+    pub async fn timeline(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<Vec<Tweet>, AppError> {
         let endpoint = format!(
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
         );
-        let body = match since_id {
-            Some(since_id) => json!({ "since_id": since_id }).to_string(),
-            None => "".to_string(),
-        };
+        let body = serde_json::to_string(params).map_err(AppError::JsonRpcParamsParse)?;
         let json = self
             .client
             .get(endpoint)
@@ -63,10 +66,12 @@ impl ApiClient {
             .await?
             .text()
             .await?;
-        let resp: serde_json::Value = serde_json::from_str(&json)?;
+        let resp: serde_json::Value =
+            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
         println!("{:?}", resp);
         let data = &resp["data"];
-        let tweets: Vec<Tweet> = serde_json::value::from_value(data.clone())?;
+        let tweets: Vec<Tweet> =
+            serde_json::value::from_value(data.clone()).map_err(AppError::ApiResponseParse)?;
         Ok(tweets)
     }
 }
