@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use reqwest::header::CONTENT_TYPE;
 use reqwest::Client;
-use serde_json::json;
+use tracing::info;
 
 use crate::error::AppError;
 use crate::tweet::Tweet;
@@ -68,7 +68,7 @@ impl ApiClient {
             .await?;
         let resp: serde_json::Value =
             serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
-        println!("{:?}", resp);
+        info!("{:?}", resp);
         let data = &resp["data"];
         let tweets: Vec<Tweet> =
             serde_json::value::from_value(data.clone()).map_err(AppError::ApiResponseParse)?;

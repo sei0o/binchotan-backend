@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, env, io::Read, os::unix::net::UnixListener};
+use std::{borrow::Cow, env, io::Read, os::unix::net::UnixListener};
 
 use anyhow::{anyhow, Context};
 use error::AppError;
@@ -6,6 +6,7 @@ use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
+use tracing::info;
 use url::Url;
 
 use crate::connection::{Request, RequestParams};
@@ -18,6 +19,7 @@ mod tweet;
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::init();
 
     let (access_token, refresh_token) = authenticate().await?;
     let client = api::ApiClient::new(access_token).await?;
@@ -32,7 +34,7 @@ async fn main() -> Result<(), AppError> {
                 stream.read_to_string(&mut payload)?;
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                println!("{:?}", req);
+                info!("{:?}", req);
                 req.validate()?;
 
                 match req.params {
@@ -45,7 +47,7 @@ async fn main() -> Result<(), AppError> {
                     }
                     RequestParams::HomeTimeline(api_params) => {
                         let tweets = client.timeline(&api_params).await?;
-                        println!("{:?}", tweets);
+                        info!("{:?}", tweets);
                     }
                 }
             }
