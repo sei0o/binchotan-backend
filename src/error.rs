@@ -3,14 +3,16 @@ use thiserror::Error;
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("could not parse the cache file")]
+    CacheParse(serde_json::Error),
     #[error("the environment variable was not defined")]
     EnvVar(#[from] std::env::VarError),
     #[error("reached rate limit for Twitter API")]
     ApiRateLimit,
     #[error("could not parse the API response")]
     ApiResponseParse(serde_json::Error),
-    #[error("field {0} was not found in the API response")]
-    ApiResponseNotFound(String),
+    #[error("field {0} was not found in the API response: {1:?}")]
+    ApiResponseNotFound(String, serde_json::Value),
     #[error("failed to request the API")]
     ApiRequest(#[from] reqwest::Error),
     #[error("OAuth2 error: {0:?}")]
@@ -25,4 +27,6 @@ pub enum AppError {
     JsonRpcVersion(String),
     #[error("could not parse the parameters in the request")]
     JsonRpcParamsParse(serde_json::Error),
+    #[error("other IO error")]
+    Io(std::io::Error),
 }

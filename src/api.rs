@@ -42,7 +42,7 @@ impl ApiClient {
         let id = user_data["data"]["id"]
             .as_str()
             .map(String::from)
-            .ok_or_else(|| AppError::ApiResponseNotFound("id".to_owned()))?;
+            .ok_or_else(|| AppError::ApiResponseNotFound("id".to_owned(), user_data))?;
         Ok(id)
     }
 

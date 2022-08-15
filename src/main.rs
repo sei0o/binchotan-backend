@@ -1,4 +1,11 @@
-use std::{borrow::Cow, env, fs, io::Read, os::unix::net::UnixListener};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    env,
+    fs::{self, File},
+    io::{Read, Write},
+    os::unix::net::UnixListener,
+};
 
 use anyhow::{anyhow, Context};
 use error::AppError;
@@ -6,6 +13,7 @@ use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
+use serde_json::json;
 use tracing::{error, info};
 use url::Url;
 
@@ -27,10 +35,27 @@ async fn main() -> Result<(), AppError> {
     })
     .context("could not create a Ctrl-C(SIGINT) handler")?;
 
+    let result = start().await;
+    if let Err(err) = &result {
+        println!("{}", err);
+    }
+    fini()?;
+    result
+}
+
+async fn start() -> Result<(), AppError> {
+    let (access_token, refresh_token) = match load_tokens()? {
+        Some(tokens) => tokens,
+        None => {
+            let (access, refresh) = authenticate().await?;
+            save_tokens(&access, &refresh)?;
+            (access, refresh)
+        }
+    };
+
     let sock_path = env::var("SOCKET_PATH")?;
     let listener = UnixListener::bind(sock_path)?;
 
-    let (access_token, refresh_token) = authenticate().await?;
     let client = api::ApiClient::new(access_token).await?;
 
     for stream in listener.incoming() {
@@ -65,8 +90,6 @@ async fn main() -> Result<(), AppError> {
     // TODO: return filtered tweets over the socket
     // TODO: mock frontend
     // TODO: socket protocol?
-
-    fini()?;
 
     Ok(())
 }
@@ -152,4 +175,36 @@ fn create_client(id: String, secret: String) -> Result<BasicClient, AppError> {
                 .map_err(|x| AppError::OAuth(x.into()))?,
         ),
     ))
+}
+
+fn save_tokens(access_token: &str, refresh_token: &str) -> Result<(), AppError> {
+    let cache_path = env::var("CACHE_PATH")?;
+    let mut file = File::create(cache_path)?;
+    file.write_all(
+        json!({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+        })
+        .to_string()
+        .as_bytes(),
+    )?;
+
+    Ok(())
+}
+
+fn load_tokens() -> Result<Option<(String, String)>, AppError> {
+    let cache_path = env::var("CACHE_PATH")?;
+    let mut file = match File::open(cache_path) {
+        Ok(file) => file,
+        Err(x) if x.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(x) => return Err(x).map_err(AppError::Io),
+    };
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let json: HashMap<&str, serde_json::Value> =
+        serde_json::from_str(&content).map_err(AppError::CacheParse)?;
+    Ok(Some((
+        json["access_token"].to_string(),
+        json["refresh_token"].to_string(),
+    )))
 }
