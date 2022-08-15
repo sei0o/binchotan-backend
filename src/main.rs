@@ -1,4 +1,4 @@
-use std::{borrow::Cow, env, io::Read, os::unix::net::UnixListener};
+use std::{borrow::Cow, env, fs, io::Read, os::unix::net::UnixListener};
 
 use anyhow::{anyhow, Context};
 use error::AppError;
@@ -6,7 +6,7 @@ use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
-use tracing::info;
+use tracing::{error, info};
 use url::Url;
 
 use crate::connection::{Request, RequestParams};
@@ -21,11 +21,17 @@ async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let (access_token, refresh_token) = authenticate().await?;
-    let client = api::ApiClient::new(access_token).await?;
+    ctrlc::set_handler(move || match fini() {
+        Ok(_) => {}
+        Err(err) => error!("{}", err),
+    })
+    .context("could not create a Ctrl-C(SIGINT) handler")?;
 
     let sock_path = env::var("SOCKET_PATH")?;
     let listener = UnixListener::bind(sock_path)?;
+
+    let (access_token, refresh_token) = authenticate().await?;
+    let client = api::ApiClient::new(access_token).await?;
 
     for stream in listener.incoming() {
         match stream {
@@ -60,7 +66,16 @@ async fn main() -> Result<(), AppError> {
     // TODO: mock frontend
     // TODO: socket protocol?
 
+    fini()?;
+
     Ok(())
+}
+
+fn fini() -> Result<(), AppError> {
+    let sock_path = env::var("SOCKET_PATH")?;
+    fs::remove_file(sock_path)?;
+    // TODO: better termination?
+    std::process::exit(0);
 }
 
 // Autenticate to Twitter.

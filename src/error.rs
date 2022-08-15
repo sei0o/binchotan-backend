@@ -17,7 +17,7 @@ pub enum AppError {
     OAuth(#[from] anyhow::Error),
     #[error("could not parse the URL")]
     OAuthUrlParse(#[from] url::ParseError),
-    #[error("could not bind to the socket")]
+    #[error("could not bind to the socket. another backend might be running?")]
     SocketBind(#[from] std::io::Error),
     #[error("could not parse the socket payload")]
     SocketPayloadParse(serde_json::Error),
