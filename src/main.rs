@@ -52,6 +52,7 @@ async fn start() -> Result<(), AppError> {
             (access, refresh)
         }
     };
+    info!("Tokens retrieved: {}, {}", access_token, refresh_token);
 
     let sock_path = env::var("SOCKET_PATH")?;
     let listener = UnixListener::bind(sock_path)?;
