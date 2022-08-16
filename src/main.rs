@@ -47,7 +47,7 @@ async fn start() -> Result<(), AppError> {
     info!("Tokens retrieved: {}, {}", access_token, refresh_token);
 
     let sock_path = env::var("SOCKET_PATH")?;
-    let listener = UnixListener::bind(sock_path)?;
+    let listener = UnixListener::bind(sock_path).map_err(AppError::SocketBind)?;
 
     let client = api::ApiClient::new(access_token).await?;
 

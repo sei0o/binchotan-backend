@@ -3,32 +3,34 @@ use thiserror::Error;
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("could not parse the cache file")]
+    #[error("could not parse the cache file: {0}")]
     CacheParse(serde_json::Error),
-    #[error("the environment variable was not defined")]
+    #[error("the environment variable was not defined: {0}")]
     EnvVar(#[from] std::env::VarError),
     #[error("reached rate limit for Twitter API")]
     ApiRateLimit,
-    #[error("could not parse the API response")]
+    #[error("could not parse the API response: {0}")]
     ApiResponseParse(serde_json::Error),
     #[error("field {0} was not found in the API response: {1:?}")]
     ApiResponseNotFound(String, serde_json::Value),
-    #[error("could not convert the API response into JSON")]
+    #[error("could not convert the API response into JSON: {0}")]
     ApiResponseSerialize(serde_json::Error),
-    #[error("failed to request the API")]
+    #[error("failed to request the API: {0}")]
     ApiRequest(#[from] reqwest::Error),
     #[error("OAuth2 error: {0:?}")]
-    OAuth(#[from] anyhow::Error),
-    #[error("could not parse the URL")]
+    OAuth(anyhow::Error),
+    #[error("could not parse the URL: {0}")]
     OAuthUrlParse(#[from] url::ParseError),
-    #[error("could not bind to the socket. another backend might be running?")]
-    SocketBind(#[from] std::io::Error),
-    #[error("could not parse the socket payload")]
+    #[error("could not bind to the socket. another backend might be running? : {0}")]
+    SocketBind(std::io::Error),
+    #[error("could not parse the socket payload: {0}")]
     SocketPayloadParse(serde_json::Error),
     #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
     JsonRpcVersion(String),
-    #[error("could not parse the parameters in the request")]
+    #[error("could not parse the parameters in the request: {0}")]
     JsonRpcParamsParse(serde_json::Error),
-    #[error("other IO error")]
-    Io(std::io::Error),
+    #[error("other IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
