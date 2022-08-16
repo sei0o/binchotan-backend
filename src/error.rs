@@ -13,6 +13,8 @@ pub enum AppError {
     ApiResponseParse(serde_json::Error),
     #[error("field {0} was not found in the API response: {1:?}")]
     ApiResponseNotFound(String, serde_json::Value),
+    #[error("could not convert the API response into JSON")]
+    ApiResponseSerialize(serde_json::Error),
     #[error("failed to request the API")]
     ApiRequest(#[from] reqwest::Error),
     #[error("OAuth2 error: {0:?}")]

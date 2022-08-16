@@ -1,10 +1,14 @@
-use std::{env, io::Read, os::unix::net::UnixListener};
+use std::{
+    env,
+    io::{Read, Write},
+    os::unix::net::UnixListener,
+};
 
 use anyhow::Context;
 use error::AppError;
 use tracing::{error, info};
 
-use crate::connection::{Request, RequestParams};
+use crate::connection::Request;
 
 mod api;
 mod auth;
@@ -54,20 +58,16 @@ async fn start() -> Result<(), AppError> {
                 stream.read_to_string(&mut payload)?;
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                info!("{:?}", req);
-                req.validate()?;
+                let resp = connection::handle_request(req, &client).await;
 
-                match req.params {
-                    RequestParams::Plain {
-                        http_method,
-                        endpoint,
-                        api_params,
-                    } => {
-                        todo!()
+                match resp {
+                    Ok(resp) => {
+                        let json =
+                            serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
+                        stream.write_all(&json.as_bytes())?;
                     }
-                    RequestParams::HomeTimeline(api_params) => {
-                        let tweets = client.timeline(&api_params).await?;
-                        info!("{:?}", tweets);
+                    Err(err) => {
+                        let json = todo!();
                     }
                 }
             }
