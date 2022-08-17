@@ -16,6 +16,8 @@ mod connection;
 mod error;
 mod tweet;
 
+const VERSION: &str = "0.1.0";
+
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
@@ -64,7 +66,8 @@ async fn start() -> Result<(), AppError> {
                     Ok(resp) => {
                         let json =
                             serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
-                        stream.write_all(&json.as_bytes())?;
+                        stream.write_all(json.as_bytes())?;
+                        stream.flush()?;
                     }
                     Err(err) => {
                         let json = todo!();

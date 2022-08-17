@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::connection::{Method, Request, RequestParams};
+
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -27,8 +29,10 @@ pub enum AppError {
     SocketPayloadParse(serde_json::Error),
     #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
     JsonRpcVersion(String),
-    #[error("could not parse the parameters in the request: {0}")]
+    #[error("could not parse the parameters in the JSON-RPC request: {0}")]
     JsonRpcParamsParse(serde_json::Error),
+    #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
+    JsonRpcParamsMismatch(Request),
     #[error("other IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
