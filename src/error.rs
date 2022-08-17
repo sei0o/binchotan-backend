@@ -35,6 +35,10 @@ pub enum AppError {
     JsonRpcParamsMismatch(Request),
     #[error("too large payload")]
     JsonRpcTooLarge,
+    #[error("could not set global variable in Lua filter")]
+    FilterLuaGlobalVar,
+    #[error("mlua error: {0}")]
+    Lua(#[from] mlua::Error),
     #[error("other IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]

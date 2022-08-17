@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{error, info};
 
-use crate::{api, error::AppError, VERSION};
+use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
 
 const JSONRPC_VERSION: &str = "2.0";
 
@@ -71,17 +70,19 @@ pub struct Response {
 
 #[derive(Debug, Serialize)]
 pub enum ResponseContent {
+    #[serde(rename = "result")]
     Plain {
         meta: ResponsePlainMeta,
         body: serde_json::Value,
     },
+    #[serde(rename = "result")]
     HomeTimeline {
         meta: ResponsePlainMeta,
-        body: serde_json::Value,
+        body: Vec<Tweet>,
     },
-    Status {
-        version: String,
-    },
+    #[serde(rename = "result")]
+    Status { version: String },
+    #[serde(rename = "error")]
     Error(ResponseError),
 }
 
@@ -113,22 +114,46 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
             }
             _ => Err(AppError::JsonRpcParamsMismatch(req)),
         },
-        Method::HomeTimeline => match req.params {
-            RequestParams::Map(api_params) => {
-                let tweets = client.timeline(&api_params).await?;
-                info!(
-                    "successfully retrieved tweets (reverse_chronological): {:?}",
-                    tweets[0]
-                );
+        Method::HomeTimeline => {
+            let params = match req.params {
+                RequestParams::Map(api_params) => api_params,
+                RequestParams::Empty => HashMap::new(),
+                _ => return Err(AppError::JsonRpcParamsMismatch(req)),
+            };
+            let tweets = client.timeline(&params).await?;
+            info!(
+                "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
+            );
 
-                let resp = Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content: todo!(),
-                    id: req.id,
-                };
-            }
-            _ => Err(AppError::JsonRpcParamsMismatch(req)),
-        },
+            // TODO: load the Lua source code
+            let filter = Filter {
+                src: "{id = \"123456\", text = \"hi this is a sample tweet\"}".to_string(),
+            };
+            let filtered_tweets: Vec<Tweet> = tweets
+                .into_iter()
+                .filter_map(|t| match filter.run(&t) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        error!("filter returned an error: {}", err);
+                        None
+                    }
+                })
+                .collect();
+
+            let content = ResponseContent::HomeTimeline {
+                meta: ResponsePlainMeta {
+                    // TODO:
+                    api_calls_remaining: 0,
+                    api_calls_reset: 0,
+                },
+                body: filtered_tweets,
+            };
+            Ok(Response {
+                jsonrpc: JSONRPC_VERSION.to_string(),
+                content,
+                id: req.id,
+            })
+        }
         Method::Status => match req.params {
             RequestParams::Empty => {
                 let content = ResponseContent::Status {

@@ -14,6 +14,7 @@ mod api;
 mod auth;
 mod connection;
 mod error;
+mod filter;
 mod tweet;
 
 const VERSION: &str = "0.1.0";
@@ -79,11 +80,6 @@ async fn start() -> Result<(), AppError> {
             Err(err) => continue,
         }
     }
-
-    // TODO: call filters in Lua
-    // TODO: return filtered tweets over the socket
-    // TODO: mock frontend
-    // TODO: socket protocol?
 
     Ok(())
 }
