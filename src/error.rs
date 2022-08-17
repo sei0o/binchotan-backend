@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 use crate::connection::{Method, Request, RequestParams};
@@ -37,6 +39,10 @@ pub enum AppError {
     JsonRpcTooLarge,
     #[error("could not set global variable in Lua filter")]
     FilterLuaGlobalVar,
+    #[error("the given path ({0}) is not a directory")]
+    FilterPathNotDir(PathBuf),
+    #[error("could not parse binchotan.toml")]
+    FilterMetaParse(toml::de::Error),
     #[error("mlua error: {0}")]
     Lua(#[from] mlua::Error),
     #[error("other IO error: {0}")]

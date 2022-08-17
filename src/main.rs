@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Context;
 use error::AppError;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::connection::Request;
 
@@ -73,6 +73,7 @@ async fn start() -> Result<(), AppError> {
                         stream.flush()?;
                     }
                     Err(err) => {
+                        warn!("something bad happened: {:?}", err);
                         let json = todo!();
                     }
                 }

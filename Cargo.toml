@@ -17,5 +17,6 @@ serde = "~1"
 tokio = { version = "1", features = ["full"] }
 tracing = "~0.1"
 tracing-subscriber = "~0.2"
+toml = "~0.5.9"
 ctrlc = "~3.2.3"
 mlua = { version = "~0.8.3", features = ["serialize", "lua54", "vendored"] }

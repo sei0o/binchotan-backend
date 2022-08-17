@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, env, path::Path};
 use tracing::{error, info};
 
 use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
@@ -125,20 +125,21 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
                 "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
             );
 
-            // TODO: load the Lua source code
-            let filter = Filter {
-                src: "{id = \"123456\", text = \"hi this is a sample tweet\"}".to_string(),
-            };
-            let filtered_tweets: Vec<Tweet> = tweets
-                .into_iter()
-                .filter_map(|t| match filter.run(&t) {
-                    Ok(x) => x,
-                    Err(err) => {
-                        error!("filter returned an error: {}", err);
-                        None
+            let filter_dir = env::var("FILTER_DIR")?;
+            let path = Path::new(&filter_dir);
+            let filters = Filter::load(path)?;
+
+            let mut filtered_tweets = vec![];
+            'outer: for tweet in tweets {
+                let mut result = tweet;
+                for filter in &filters {
+                    match filter.run(&result)? {
+                        Some(t) => result = t,
+                        None => continue 'outer,
                     }
-                })
-                .collect();
+                }
+                filtered_tweets.push(result);
+            }
 
             let content = ResponseContent::HomeTimeline {
                 meta: ResponsePlainMeta {
