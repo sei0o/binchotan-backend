@@ -33,6 +33,8 @@ pub enum AppError {
     JsonRpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
     JsonRpcParamsMismatch(Request),
+    #[error("too large payload")]
+    JsonRpcTooLarge,
     #[error("other IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]

@@ -1,6 +1,6 @@
 use std::{
     env,
-    io::{Read, Write},
+    io::{BufRead, BufReader, Write},
     os::unix::net::UnixListener,
 };
 
@@ -56,12 +56,14 @@ async fn start() -> Result<(), AppError> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
+                let stream_ = stream.try_clone()?;
+                let mut reader = BufReader::new(stream_);
                 let mut payload = String::new();
-                stream.read_to_string(&mut payload)?;
+                reader.read_line(&mut payload)?;
+
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
                 let resp = connection::handle_request(req, &client).await;
-
                 match resp {
                     Ok(resp) => {
                         let json =
