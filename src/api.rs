@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use reqwest::header::CONTENT_TYPE;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use tracing::{debug, info};
 
 use crate::connection::HttpMethod;
@@ -86,19 +86,25 @@ impl ApiClient {
         let path = endpoint_path.replace(":id", &self.user_id);
         let endpoint = format!("https://api.twitter.com/2/{}", path);
         let body = serde_json::to_string(params).map_err(AppError::JsonRpcParamsParse)?;
-        let json = self
+        let resp = self
             .client
             .request(reqwest::Method::from(*method), endpoint)
             .body(body)
             .bearer_auth(self.access_token.to_owned())
             .header(CONTENT_TYPE, "application/json")
             .send()
-            .await?
-            .text()
             .await?;
-        let resp: serde_json::Value =
-            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
-        debug!("{:?}", resp);
-        Ok(resp)
+        let status = resp.status();
+        let json = resp.text().await?;
+
+        match status {
+            x if x.is_success() => {
+                let val: serde_json::Value =
+                    serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+                debug!("{:?}", val);
+                Ok(val)
+            }
+            x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
+        }
     }
 }
