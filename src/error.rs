@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::connection::{Method, Request, RequestParams};
+use crate::connection::Request;
 
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
@@ -11,8 +11,6 @@ pub enum AppError {
     CacheParse(serde_json::Error),
     #[error("the environment variable was not defined: {0}")]
     EnvVar(#[from] std::env::VarError),
-    #[error("reached rate limit for Twitter API")]
-    ApiRateLimit,
     #[error("could not parse the API response: {0}")]
     ApiResponseParse(serde_json::Error),
     #[error("field {0} was not found in the API response: {1:?}")]
@@ -39,8 +37,6 @@ pub enum AppError {
     JsonRpcParamsMismatch(Request),
     #[error("too large payload")]
     JsonRpcTooLarge,
-    #[error("could not set global variable in Lua filter")]
-    FilterLuaGlobalVar,
     #[error("the given path ({0}) is not a directory")]
     FilterPathNotDir(PathBuf),
     #[error("could not parse binchotan.toml")]

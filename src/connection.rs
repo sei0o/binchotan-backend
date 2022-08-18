@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, path::Path};
-use tracing::{error, info};
+use std::{collections::HashMap, env, error::Error, path::Path};
+use tracing::info;
 
 use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
 
-const JSONRPC_VERSION: &str = "2.0";
+pub const JSONRPC_VERSION: &str = "2.0";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
@@ -110,9 +110,42 @@ pub struct ResponsePlainMeta {
 
 #[derive(Debug, Serialize)]
 pub struct ResponseError {
-    pub code: usize,
+    pub code: isize,
     pub message: String,
     pub data: Option<serde_json::Value>,
+}
+
+impl From<AppError> for ResponseError {
+    fn from(err: AppError) -> Self {
+        let code = match err {
+            AppError::Io(_) => -32000,
+            AppError::CacheParse(_) => -32000,
+            AppError::EnvVar(_) => -32000,
+            AppError::ApiResponseParse(_) => -32000,
+            AppError::ApiResponseNotFound(_, _) => -32000,
+            AppError::ApiResponseSerialize(_) => -32000,
+            AppError::ApiRequest(_) => -32000,
+            AppError::ApiResponseStatus(_, _) => -32001,
+            AppError::OAuth(_) => -32000,
+            AppError::OAuthUrlParse(_) => -32000,
+            AppError::SocketBind(_) => -32000,
+            AppError::SocketPayloadParse(_) => -32700,
+            AppError::JsonRpcVersion(_) => -32600,
+            AppError::JsonRpcParamsParse(_) => -32700,
+            AppError::JsonRpcParamsMismatch(_) => -32602,
+            AppError::JsonRpcTooLarge => -32603,
+            AppError::FilterPathNotDir(_) => -32000,
+            AppError::FilterMetaParse(_) => -32000,
+            AppError::Lua(_) => -32002,
+            AppError::Other(_) => -32099,
+        };
+
+        ResponseError {
+            code,
+            message: err.to_string(),
+            data: None,
+        }
+    }
 }
 
 pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Response, AppError> {

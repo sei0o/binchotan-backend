@@ -79,15 +79,12 @@ pub async fn authenticate() -> Result<(String, String), AppError> {
 }
 
 pub fn create_client(id: String, secret: String) -> Result<BasicClient, AppError> {
+    // SAFETY: it's safe to unwrap here because we are just converting constant strings into dedicated structs.
     Ok(BasicClient::new(
         ClientId::new(id),
         Some(ClientSecret::new(secret)),
-        AuthUrl::new("https://twitter.com/i/oauth2/authorize".to_owned())
-            .map_err(|x| AppError::OAuth(x.into()))?,
-        Some(
-            TokenUrl::new("https://api.twitter.com/2/oauth2/token".to_owned())
-                .map_err(|x| AppError::OAuth(x.into()))?,
-        ),
+        AuthUrl::new("https://twitter.com/i/oauth2/authorize".to_owned()).unwrap(),
+        Some(TokenUrl::new("https://api.twitter.com/2/oauth2/token".to_owned()).unwrap()),
     ))
 }
 
