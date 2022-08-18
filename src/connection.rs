@@ -6,7 +6,7 @@ use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
 
 const JSONRPC_VERSION: &str = "2.0";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Request {
     pub jsonrpc: String,
     pub method: Method,
@@ -24,7 +24,7 @@ impl Request {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub enum Method {
     #[serde(rename = "v0.plain")]
     Plain,
@@ -34,7 +34,8 @@ pub enum Method {
     Status,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
 pub enum RequestParams {
     Plain {
         http_method: HttpMethod,
@@ -42,12 +43,16 @@ pub enum RequestParams {
         api_params: HashMap<String, serde_json::Value>,
     },
     Map(HashMap<String, serde_json::Value>),
-    #[default]
-    Empty,
+}
+
+impl Default for RequestParams {
+    fn default() -> Self {
+        RequestParams::Map(HashMap::new())
+    }
 }
 
 // We define an enum for HTTP request method since http::Method does not implement serde::Deserialize
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub enum HttpMethod {
     #[serde(rename = "GET")]
     Get,
@@ -117,7 +122,6 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
         Method::HomeTimeline => {
             let params = match req.params {
                 RequestParams::Map(api_params) => api_params,
-                RequestParams::Empty => HashMap::new(),
                 _ => return Err(AppError::JsonRpcParamsMismatch(req)),
             };
             let tweets = client.timeline(&params).await?;
@@ -155,19 +159,26 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
                 id: req.id,
             })
         }
-        Method::Status => match req.params {
-            RequestParams::Empty => {
-                let content = ResponseContent::Status {
-                    version: VERSION.to_string(),
-                };
+        Method::Status => {
+            let req_ = req.clone();
+            match req.params {
+                RequestParams::Map(prms) => {
+                    if !prms.is_empty() {
+                        return Err(AppError::JsonRpcParamsMismatch(req_));
+                    }
 
-                Ok(Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content,
-                    id: req.id,
-                })
+                    let content = ResponseContent::Status {
+                        version: VERSION.to_string(),
+                    };
+
+                    Ok(Response {
+                        jsonrpc: JSONRPC_VERSION.to_string(),
+                        content,
+                        id: req.id,
+                    })
+                }
+                _ => Err(AppError::JsonRpcParamsMismatch(req)),
             }
-            _ => Err(AppError::JsonRpcParamsMismatch(req)),
-        },
+        }
     }
 }
