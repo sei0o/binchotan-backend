@@ -52,7 +52,7 @@ impl Default for RequestParams {
 }
 
 // We define an enum for HTTP request method since http::Method does not implement serde::Deserialize
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub enum HttpMethod {
     #[serde(rename = "GET")]
     Get,
@@ -63,6 +63,17 @@ pub enum HttpMethod {
     #[serde(rename = "DELETE")]
     Delete,
     // Twitter API does not utilize other methods
+}
+
+impl From<HttpMethod> for reqwest::Method {
+    fn from(h: HttpMethod) -> Self {
+        match h {
+            HttpMethod::Get => reqwest::Method::GET,
+            HttpMethod::Post => reqwest::Method::POST,
+            HttpMethod::Put => reqwest::Method::PUT,
+            HttpMethod::Delete => reqwest::Method::DELETE,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -115,7 +126,22 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
                 endpoint,
                 api_params,
             } => {
-                todo!()
+                let resp = client.call(&http_method, &endpoint, &api_params).await?;
+                info!("got response for plain request with id {}", req.id);
+
+                let content = ResponseContent::Plain {
+                    meta: ResponsePlainMeta {
+                        // TODO:
+                        api_calls_remaining: 0,
+                        api_calls_reset: 0,
+                    },
+                    body: resp,
+                };
+                Ok(Response {
+                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    content,
+                    id: req.id,
+                })
             }
             _ => Err(AppError::JsonRpcParamsMismatch(req)),
         },

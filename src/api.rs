@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use reqwest::header::CONTENT_TYPE;
 use reqwest::Client;
-use tracing::info;
+use tracing::{debug, info};
 
+use crate::connection::HttpMethod;
 use crate::error::AppError;
 use crate::tweet::Tweet;
 
@@ -68,10 +69,36 @@ impl ApiClient {
             .await?;
         let resp: serde_json::Value =
             serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
-        info!("{:?}", resp);
+        debug!("{:?}", resp);
         let data = &resp["data"];
         let tweets: Vec<Tweet> =
             serde_json::value::from_value(data.clone()).map_err(AppError::ApiResponseParse)?;
         Ok(tweets)
+    }
+
+    /// Calls an arbitrary endpoint with the method and the parameters given in the arguments. Path parameters such as `:id` are replace with those of the authenticating user.
+    pub async fn call(
+        &self,
+        method: &HttpMethod,
+        endpoint_path: &str,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> Result<serde_json::Value, AppError> {
+        let path = endpoint_path.replace(":id", &self.user_id);
+        let endpoint = format!("https://api.twitter.com/2/{}", path);
+        let body = serde_json::to_string(params).map_err(AppError::JsonRpcParamsParse)?;
+        let json = self
+            .client
+            .request(reqwest::Method::from(*method), endpoint)
+            .body(body)
+            .bearer_auth(self.access_token.to_owned())
+            .header(CONTENT_TYPE, "application/json")
+            .send()
+            .await?
+            .text()
+            .await?;
+        let resp: serde_json::Value =
+            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+        debug!("{:?}", resp);
+        Ok(resp)
     }
 }
