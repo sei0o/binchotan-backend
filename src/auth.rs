@@ -17,10 +17,10 @@ use url::Url;
 
 // Autenticate to Twitter.
 // TODO: cache access token / refresh tokens locally?
-pub async fn authenticate() -> Result<(String, String), AppError> {
-    let client_id = env::var("TWITTER_CLIENT_ID")?;
-    let client_secret = env::var("TWITTER_CLIENT_SECRET")?;
-
+pub async fn authenticate(
+    client_id: String,
+    client_secret: String,
+) -> Result<(String, String), AppError> {
     let client = create_client(client_id, client_secret)?
         .set_redirect_uri(RedirectUrl::new("https://localhost".to_owned())?);
 
@@ -88,8 +88,11 @@ pub fn create_client(id: String, secret: String) -> Result<BasicClient, AppError
     ))
 }
 
-pub fn save_tokens(access_token: &str, refresh_token: &str) -> Result<(), AppError> {
-    let cache_path = env::var("CACHE_PATH")?;
+pub fn save_tokens(
+    cache_path: &str,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<(), AppError> {
     let mut file = File::create(cache_path)?;
     file.write_all(
         json!({
@@ -103,8 +106,7 @@ pub fn save_tokens(access_token: &str, refresh_token: &str) -> Result<(), AppErr
     Ok(())
 }
 
-pub fn load_tokens() -> Result<Option<(String, String)>, AppError> {
-    let cache_path = env::var("CACHE_PATH")?;
+pub fn load_tokens(cache_path: &str) -> Result<Option<(String, String)>, AppError> {
     let mut file = match File::open(cache_path) {
         Ok(file) => file,
         Err(x) if x.kind() == std::io::ErrorKind::NotFound => return Ok(None),

@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, path::Path};
+use std::{
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+};
 use tracing::{info, warn};
 
 use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
@@ -148,9 +152,13 @@ impl From<AppError> for ResponseError {
     }
 }
 
-pub async fn handle_request(req: Request, client: &api::ApiClient) -> Response {
+pub async fn handle_request(
+    req: Request,
+    client: &api::ApiClient,
+    filter_path: PathBuf,
+) -> Response {
     let id = req.id.clone();
-    match handle_request_inner(req, client).await {
+    match handle_request_inner(req, client, filter_path).await {
         Ok(resp) => resp,
         Err(err) => {
             warn!("something bad happened: {:?}", err);
@@ -164,7 +172,14 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Response {
     }
 }
 
-async fn handle_request_inner(req: Request, client: &api::ApiClient) -> Result<Response, AppError> {
+async fn handle_request_inner<P>(
+    req: Request,
+    client: &api::ApiClient,
+    filter_path: P,
+) -> Result<Response, AppError>
+where
+    P: AsRef<Path>,
+{
     info!("received a request: {:?}", req);
     req.validate()?;
 
@@ -204,9 +219,7 @@ async fn handle_request_inner(req: Request, client: &api::ApiClient) -> Result<R
                 "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
             );
 
-            let filter_dir = env::var("FILTER_DIR")?;
-            let path = Path::new(&filter_dir);
-            let filters = Filter::load(path)?;
+            let filters = Filter::load(filter_path.as_ref())?;
 
             let mut filtered_tweets = vec![];
             'outer: for tweet in tweets {

@@ -2,16 +2,18 @@ use std::{
     env,
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixListener,
+    path::Path,
 };
 
 use anyhow::Context;
 use error::AppError;
 use tracing::{error, info, warn};
 
-use crate::connection::{Request, Response, ResponseContent, ResponseError, JSONRPC_VERSION};
+use crate::{config::Config, connection::Request};
 
 mod api;
 mod auth;
+mod config;
 mod connection;
 mod error;
 mod filter;
@@ -24,33 +26,39 @@ async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    ctrlc::set_handler(move || match fini() {
-        Ok(_) => {}
-        Err(err) => error!("{}", err),
+    let config = Config::new()?;
+    let sock_path = config.socket_path.clone();
+
+    ctrlc::set_handler({
+        let path = config.socket_path.clone();
+        move || match fini(&path) {
+            Ok(_) => {}
+            Err(err) => error!("{}", err),
+        }
     })
     .context("could not create a Ctrl-C(SIGINT) handler")?;
 
-    let result = start().await;
+    let result = start(config).await;
     if let Err(err) = &result {
         println!("{}", err);
     }
-    fini()?;
+    fini(&sock_path)?;
     result
 }
 
-async fn start() -> Result<(), AppError> {
-    let (access_token, refresh_token) = match auth::load_tokens()? {
+async fn start(config: Config) -> Result<(), AppError> {
+    let (access_token, refresh_token) = match auth::load_tokens(&config.cache_path)? {
         Some(tokens) => tokens,
         None => {
-            let (access, refresh) = auth::authenticate().await?;
-            auth::save_tokens(&access, &refresh)?;
+            let (access, refresh) =
+                auth::authenticate(config.twitter_client_id, config.twitter_client_secret).await?;
+            auth::save_tokens(&config.cache_path, &access, &refresh)?;
             (access, refresh)
         }
     };
     info!("Tokens retrieved: {}, {}", access_token, refresh_token);
 
-    let sock_path = env::var("SOCKET_PATH")?;
-    let listener = UnixListener::bind(sock_path).map_err(AppError::SocketBind)?;
+    let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
 
     let client = api::ApiClient::new(access_token).await?;
 
@@ -64,7 +72,8 @@ async fn start() -> Result<(), AppError> {
 
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                let resp = connection::handle_request(req, &client).await;
+                let resp =
+                    connection::handle_request(req, &client, config.filter_dir.clone()).await;
 
                 let json = serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
                 stream.write_all(json.as_bytes())?;
@@ -77,9 +86,11 @@ async fn start() -> Result<(), AppError> {
     Ok(())
 }
 
-fn fini() -> Result<(), AppError> {
-    let sock_path = env::var("SOCKET_PATH")?;
-    std::fs::remove_file(sock_path)?;
+fn fini<P>(sock_path: P) -> Result<(), AppError>
+where
+    P: AsRef<Path>,
+{
+    std::fs::remove_file(sock_path.as_ref())?;
     // TODO: better termination?
     std::process::exit(0);
 }

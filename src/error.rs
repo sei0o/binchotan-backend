@@ -9,7 +9,7 @@ use crate::connection::Request;
 pub enum AppError {
     #[error("could not parse the cache file: {0}")]
     CacheParse(serde_json::Error),
-    #[error("the environment variable was not defined: {0}")]
+    #[error("Environment variable {0} is undefined")]
     EnvVar(#[from] std::env::VarError),
     #[error("could not parse the API response: {0}")]
     ApiResponseParse(serde_json::Error),
