@@ -12,7 +12,7 @@
 // プレーンリクエスト
 {
   "jsonrpc": "2.0",
-  "method": "binchotan.v0.plain_request", // pass through, proxy
+  "method": "v0.plain_request", // pass through, proxy
   "params": {
     "method": "GET",
     "endpoint": "/lists/tweets",
@@ -20,7 +20,7 @@
         ...
     }
   },
-  "id": "hogehoge" // arbitrary string
+  "id": "hogehoge" // リクエストごとに異なるidを使用する
 }
 
 // レスポンス
@@ -40,7 +40,7 @@
       }
     }
   },
-  "id": "hogehoge"
+  "id": "hogehoge" // リクエストと同じidが付与される
 }
 ```
 
@@ -52,7 +52,7 @@
 // ホームタイムラインを取得するリクエスト
 {
   "jsonrpc": "2.0",
-  "method": "binchotan.v0.home_timeline",
+  "method": "v0.home_timeline",
   "params": {
       "max_results": 1024,
   },
@@ -79,3 +79,41 @@
   "id": "hogehoge"
 }
 ```
+
+## エラー
+
+リクエストの処理中に何らかのエラーが発生した場合には、次のように `error` オブジェクトを含むレスポンスを返します。
+
+```json
+// 存在しないメソッドに対するリクエスト
+{
+  "jsonrpc": "2.0",
+  "method": "v0.this_endpoint_is_not_available",
+  "id": "foobar"
+}
+
+// レスポンス
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32601,
+    "data": null,
+    "message": "This method does not exist"
+  },
+  "id": "foobar"
+}
+```
+
+エラーコード (code) の定義は次表の通りです。
+
+| code   | 説明                                                  |
+| ------ | ----------------------------------------------------- |
+| -32700 | JSONのパースに失敗しました。                          |
+| -32600 | リクエストの形式が誤っています。                      |
+| -32601 | メソッドが存在しません。                              |
+| -32602 | メソッドに与えるパラメータが間違っています。          |
+| -32603 | JSON-RPC内部のエラー（未使用）                        |
+| -32000 | バックエンド内部のエラー                              |
+| -32001 | Twitter APIがエラーコード（4xx, 5xx）を返却しました。 |
+| -32002 | Lua関連のエラーです。                                 |
+| -32099 | バックエンドで発生したその他のエラーです。            |
