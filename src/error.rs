@@ -30,13 +30,13 @@ pub enum AppError {
     #[error("could not parse the socket payload: {0}")]
     SocketPayloadParse(serde_json::Error),
     #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
-    JsonRpcVersion(String),
+    RpcVersion(String),
     #[error("could not parse the parameters in the JSON-RPC request: {0}")]
-    JsonRpcParamsParse(serde_json::Error),
+    RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
-    JsonRpcParamsMismatch(Request),
+    RpcParamsMismatch(Request),
     #[error("too large payload")]
-    JsonRpcTooLarge,
+    RpcTooLarge,
     #[error("the given path ({0}) is not a directory")]
     FilterPathNotDir(PathBuf),
     #[error("could not parse binchotan.toml")]

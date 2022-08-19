@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, error::Error, path::Path};
+use std::{collections::HashMap, env, path::Path};
 use tracing::info;
 
 use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
@@ -19,7 +19,7 @@ impl Request {
     pub fn validate(&self) -> Result<(), AppError> {
         match self.jsonrpc.as_str() {
             JSONRPC_VERSION => Ok(()),
-            v => Err(AppError::JsonRpcVersion(v.to_owned())),
+            v => Err(AppError::RpcVersion(v.to_owned())),
         }
     }
 }
@@ -130,10 +130,10 @@ impl From<AppError> for ResponseError {
             AppError::OAuthUrlParse(_) => -32000,
             AppError::SocketBind(_) => -32000,
             AppError::SocketPayloadParse(_) => -32700,
-            AppError::JsonRpcVersion(_) => -32600,
-            AppError::JsonRpcParamsParse(_) => -32700,
-            AppError::JsonRpcParamsMismatch(_) => -32602,
-            AppError::JsonRpcTooLarge => -32603,
+            AppError::RpcVersion(_) => -32600,
+            AppError::RpcParamsParse(_) => -32700,
+            AppError::RpcParamsMismatch(_) => -32602,
+            AppError::RpcTooLarge => -32603,
             AppError::FilterPathNotDir(_) => -32000,
             AppError::FilterMetaParse(_) => -32000,
             AppError::Lua(_) => -32002,
@@ -176,12 +176,12 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
                     id: req.id,
                 })
             }
-            _ => Err(AppError::JsonRpcParamsMismatch(req)),
+            _ => Err(AppError::RpcParamsMismatch(req)),
         },
         Method::HomeTimeline => {
             let params = match req.params {
                 RequestParams::Map(api_params) => api_params,
-                _ => return Err(AppError::JsonRpcParamsMismatch(req)),
+                _ => return Err(AppError::RpcParamsMismatch(req)),
             };
             let tweets = client.timeline(&params).await?;
             info!(
@@ -223,7 +223,7 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
             match req.params {
                 RequestParams::Map(prms) => {
                     if !prms.is_empty() {
-                        return Err(AppError::JsonRpcParamsMismatch(req_));
+                        return Err(AppError::RpcParamsMismatch(req_));
                     }
 
                     let content = ResponseContent::Status {
@@ -236,7 +236,7 @@ pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Res
                         id: req.id,
                     })
                 }
-                _ => Err(AppError::JsonRpcParamsMismatch(req)),
+                _ => Err(AppError::RpcParamsMismatch(req)),
             }
         }
     }
