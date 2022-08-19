@@ -64,29 +64,11 @@ async fn start() -> Result<(), AppError> {
 
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                let req_ = req.clone();
                 let resp = connection::handle_request(req, &client).await;
-                match resp {
-                    Ok(resp) => {
-                        let json =
-                            serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
-                        stream.write_all(json.as_bytes())?;
-                        stream.flush()?;
-                    }
-                    Err(err) => {
-                        warn!("something bad happened: {:?}", err);
-                        let resp_err: ResponseError = err.into();
-                        let resp = Response {
-                            jsonrpc: JSONRPC_VERSION.to_string(),
-                            content: ResponseContent::Error(resp_err),
-                            id: req_.id,
-                        };
-                        let json =
-                            serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
-                        stream.write_all(json.as_bytes())?;
-                        stream.flush()?;
-                    }
-                }
+
+                let json = serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
+                stream.write_all(json.as_bytes())?;
+                stream.flush()?;
             }
             Err(_) => continue,
         }

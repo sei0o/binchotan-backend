@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::Path};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
 
@@ -148,7 +148,23 @@ impl From<AppError> for ResponseError {
     }
 }
 
-pub async fn handle_request(req: Request, client: &api::ApiClient) -> Result<Response, AppError> {
+pub async fn handle_request(req: Request, client: &api::ApiClient) -> Response {
+    let id = req.id.clone();
+    match handle_request_inner(req, client).await {
+        Ok(resp) => resp,
+        Err(err) => {
+            warn!("something bad happened: {:?}", err);
+            let resp_err: ResponseError = err.into();
+            Response {
+                jsonrpc: JSONRPC_VERSION.to_string(),
+                content: ResponseContent::Error(resp_err),
+                id,
+            }
+        }
+    }
+}
+
+async fn handle_request_inner(req: Request, client: &api::ApiClient) -> Result<Response, AppError> {
     info!("received a request: {:?}", req);
     req.validate()?;
 
