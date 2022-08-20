@@ -21,6 +21,8 @@ pub enum AppError {
     ApiRequest(#[from] reqwest::Error),
     #[error("the API has given a non-successful status code ({0}): {1}")]
     ApiResponseStatus(u16, String),
+    #[error("Access token is expired")]
+    ApiExpiredToken,
     #[error("OAuth2 error: {0:?}")]
     OAuth(anyhow::Error),
     #[error("could not parse the URL: {0}")]

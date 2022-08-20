@@ -1,5 +1,4 @@
 use std::{
-    env,
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixListener,
     path::Path,
@@ -9,7 +8,7 @@ use anyhow::Context;
 use error::AppError;
 use tracing::{error, info, warn};
 
-use crate::{config::Config, connection::Request};
+use crate::{auth::Auth, config::Config, connection::Request};
 
 mod api;
 mod auth;
@@ -47,20 +46,14 @@ async fn main() -> Result<(), AppError> {
 }
 
 async fn start(config: Config) -> Result<(), AppError> {
-    let (access_token, refresh_token) = match auth::load_tokens(&config.cache_path)? {
-        Some(tokens) => tokens,
-        None => {
-            let (access, refresh) =
-                auth::authenticate(config.twitter_client_id, config.twitter_client_secret).await?;
-            auth::save_tokens(&config.cache_path, &access, &refresh)?;
-            (access, refresh)
-        }
-    };
-    info!("Tokens retrieved: {}, {}", access_token, refresh_token);
+    let auth = Auth::new(
+        config.twitter_client_id,
+        config.twitter_client_secret,
+        config.cache_path,
+    );
+    let client = auth.client().await?;
 
     let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
-
-    let client = api::ApiClient::new(access_token).await?;
 
     for stream in listener.incoming() {
         match stream {

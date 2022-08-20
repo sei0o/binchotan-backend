@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    env,
     path::{Path, PathBuf},
 };
 use tracing::{info, warn};
@@ -142,6 +141,7 @@ impl From<AppError> for ResponseError {
             AppError::FilterMetaParse(_) => -32000,
             AppError::Lua(_) => -32002,
             AppError::Other(_) => -32099,
+            AppError::ApiExpiredToken => -32000,
         };
 
         ResponseError {

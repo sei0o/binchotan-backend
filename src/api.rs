@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use reqwest::header::CONTENT_TYPE;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use tracing::debug;
 
 use crate::connection::HttpMethod;
@@ -29,15 +29,30 @@ impl ApiClient {
         })
     }
 
-    pub async fn id_for_token(client: &Client, access_token: &str) -> Result<String, AppError> {
+    pub async fn validate_token(access_token: &str) -> Result<bool, AppError> {
+        let client = Client::new();
+        match Self::id_for_token(&client, access_token).await {
+            Ok(_id) => Ok(true),
+            Err(AppError::ApiExpiredToken) => Ok(false),
+            Err(other) => return Err(other),
+        }
+    }
+
+    async fn id_for_token(client: &Client, access_token: &str) -> Result<String, AppError> {
         let endpoint = "https://api.twitter.com/2/users/me";
-        let json = client
+        let resp = client
             .get(endpoint)
             .bearer_auth(access_token.to_owned())
             .send()
-            .await?
-            .text()
             .await?;
+        let status = resp.status();
+        let json = resp.text().await?;
+        match status {
+            x if x.is_success() => {}
+            StatusCode::UNAUTHORIZED => return Err(AppError::ApiExpiredToken),
+            other => return Err(AppError::ApiResponseStatus(other.as_u16(), json)),
+        }
+
         let user_data: serde_json::Value =
             serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
         let id = user_data["data"]["id"]
