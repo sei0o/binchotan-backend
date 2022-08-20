@@ -71,11 +71,11 @@ impl ApiClient {
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
         );
-        let body = serde_json::to_string(params).map_err(AppError::RpcParamsParse)?;
+
         let json = self
             .client
             .get(endpoint)
-            .body(body)
+            .query(params)
             .bearer_auth(self.access_token.to_owned())
             .header(CONTENT_TYPE, "application/json")
             .send()
