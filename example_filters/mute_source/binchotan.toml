@@ -1,0 +1,4 @@
+name = "mute source"
+description = "Mutes tweets tweeted from specific clients"
+author = "eniehack"
+entrypoint = "main.lua"
