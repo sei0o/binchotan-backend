@@ -72,7 +72,6 @@ impl ApiClient {
             self.user_id
         );
 
-        let fields = vec!["source", "attachments", "possibly_sensitive", "withheld"];
         let tweet_fields = vec![
             "attachments",
             "author_id",
