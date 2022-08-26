@@ -65,11 +65,39 @@ impl ApiClient {
     /// Calls `users/:id/timelines/reverse_chronological` endpoint to fetch the home timeline of the user.
     pub async fn timeline(
         &self,
-        params: &HashMap<String, serde_json::Value>,
+        params: &mut HashMap<String, serde_json::Value>,
     ) -> Result<Vec<Tweet>, AppError> {
         let endpoint = format!(
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
+        );
+
+        let fields = vec!["source", "attachments", "possibly_sensitive", "withheld"];
+        let tweet_fields = vec![
+            "attachments",
+            "author_id",
+            "context_annotations",
+            "conversation_id",
+            "created_at",
+            "entities",
+            "geo",
+            "id",
+            "in_reply_to_user_id",
+            "lang",
+            //"non_public_metrics",
+            "public_metrics",
+            //"organic_metrics",
+            //"promoted_metrics",
+            "possibly_sensitive",
+            "referenced_tweets",
+            "reply_settings",
+            "source",
+            "text",
+            "withheld",
+        ];
+        params.insert(
+            "tweet.fields".to_string(),
+            serde_json::json!(tweet_fields.join(",")),
         );
 
         let json = self

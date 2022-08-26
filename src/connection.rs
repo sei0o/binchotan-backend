@@ -210,11 +210,11 @@ where
             _ => Err(AppError::RpcParamsMismatch(req)),
         },
         Method::HomeTimeline => {
-            let params = match req.params {
+            let mut params = match req.params {
                 RequestParams::Map(api_params) => api_params,
                 _ => return Err(AppError::RpcParamsMismatch(req)),
             };
-            let tweets = client.timeline(&params).await?;
+            let tweets = client.timeline(&mut params).await?;
             info!(
                 "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
             );
