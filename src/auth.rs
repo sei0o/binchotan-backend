@@ -47,7 +47,7 @@ impl Auth {
     pub async fn generate_tokens(&self) -> Result<(String, String), AppError> {
         let client = self
             .create_client()?
-            .set_redirect_uri(RedirectUrl::new("https://localhost".to_owned())?);
+            .set_redirect_uri(RedirectUrl::new("http://localhost:31337".to_owned())?);
 
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let (auth_url, state) = client
@@ -58,16 +58,13 @@ impl Auth {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
-        println!("Browse to: {}", auth_url);
-        // TODO: use a web server instead?
-        println!("Paste the URL where you were redirected: ");
-
-        let mut redirected_url = String::new();
-        let stdin = std::io::stdin();
-        stdin
-            .read_line(&mut redirected_url)
-            .context("could not read STDIN")?;
-        let pairs = Url::parse(&redirected_url)?;
+        // use a web server
+        open::that(auth_url.as_str()).unwrap_or_else(|_| println!("Browse to: {}", auth_url));
+        // TODO: let users choose which port to use
+        let server = tiny_http::Server::http("localhost:31337")
+            .map_err(|e| AppError::ServerLaunch(e.to_string()))?;
+        let req = server.recv()?;
+        let pairs = Url::parse(req.url())?;
         let auth_code = pairs
             .query_pairs()
             .find_map(|(k, v)| match k {

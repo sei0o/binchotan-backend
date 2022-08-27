@@ -142,6 +142,7 @@ impl From<AppError> for ResponseError {
             AppError::Lua(_) => -32002,
             AppError::Other(_) => -32099,
             AppError::ApiExpiredToken => -32000,
+            AppError::ServerLaunch(_) => -32000,
         };
 
         ResponseError {

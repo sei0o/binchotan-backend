@@ -20,3 +20,5 @@ tracing-subscriber = "~0.2"
 toml = "~0.5.9"
 ctrlc = "~3.2.3"
 mlua = { version = "~0.8.3", features = ["serialize", "lua54", "vendored"] }
+tiny_http = "0.11"
+open = "3.0.2"

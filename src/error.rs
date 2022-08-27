@@ -11,6 +11,8 @@ pub enum AppError {
     CacheParse(serde_json::Error),
     #[error("Environment variable {0} is undefined")]
     EnvVar(#[from] std::env::VarError),
+    #[error("could not start the redirect server. The port might be already occupied: {0}")]
+    ServerLaunch(String),
     #[error("could not parse the API response: {0}")]
     ApiResponseParse(serde_json::Error),
     #[error("field {0} was not found in the API response: {1:?}")]
