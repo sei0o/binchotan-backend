@@ -64,7 +64,7 @@ impl Auth {
         let server = tiny_http::Server::http("localhost:31337")
             .map_err(|e| AppError::ServerLaunch(e.to_string()))?;
         let req = server.recv()?;
-        let pairs = Url::parse(req.url())?;
+        let pairs = Url::parse(&format!("http://localhost:31337/{}", req.url()))?;
         let auth_code = pairs
             .query_pairs()
             .find_map(|(k, v)| match k {
@@ -98,6 +98,13 @@ impl Auth {
         .to_owned();
 
         info!("Tokens retrieved: {}, {}", access_token, refresh_token);
+
+        // return 200 OK
+        let resp = tiny_http::Response::from_string(
+            "Authentication succeeded! Now you can safely close this page.",
+        );
+        req.respond(resp)?;
+
         Ok((access_token, refresh_token))
     }
 
