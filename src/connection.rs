@@ -122,8 +122,6 @@ impl From<AppError> for ResponseError {
     fn from(err: AppError) -> Self {
         let code = match err {
             AppError::Io(_) => -32000,
-            AppError::CacheParse(_) => -32000,
-            AppError::Config(_) => -32000,
             AppError::ApiResponseParse(_) => -32000,
             AppError::ApiResponseNotFound(_, _) => -32000,
             AppError::ApiResponseSerialize(_) => -32000,
@@ -131,18 +129,16 @@ impl From<AppError> for ResponseError {
             AppError::ApiResponseStatus(_, _) => -32001,
             AppError::OAuth(_) => -32000,
             AppError::OAuthUrlParse(_) => -32000,
-            AppError::SocketBind(_) => -32000,
             AppError::SocketPayloadParse(_) => -32700,
             AppError::RpcVersion(_) => -32600,
             AppError::RpcParamsParse(_) => -32700,
             AppError::RpcParamsMismatch(_) => -32602,
             AppError::RpcTooLarge => -32603,
-            AppError::FilterPathNotDir(_) => -32000,
-            AppError::FilterMetaParse(_) => -32000,
             AppError::Lua(_) => -32002,
             AppError::Other(_) => -32099,
             AppError::ApiExpiredToken => -32000,
-            AppError::ServerLaunch(_) => -32000,
+            // errors which should be thrown during initialization
+            _ => unreachable!(),
         };
 
         ResponseError {
