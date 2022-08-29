@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::File,
     io::{Read, Write},
 };
@@ -11,7 +11,7 @@ use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 use url::Url;
 
@@ -126,14 +126,12 @@ impl Auth {
 
     fn save_tokens(&self, access_token: &str, refresh_token: &str) -> Result<(), AppError> {
         let mut file = File::create(&self.cache_path)?;
-        file.write_all(
-            json!({
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            })
-            .to_string()
-            .as_bytes(),
-        )?;
+        let cache = TokenCache {
+            access_token: access_token.to_owned(),
+            refresh_token: refresh_token.to_owned(),
+            scopes: self.scopes.clone(),
+        };
+        file.write_all(serde_json::to_string(&cache).unwrap().as_bytes())?;
 
         Ok(())
     }
@@ -159,11 +157,20 @@ impl Auth {
         };
         let mut content = String::new();
         file.read_to_string(&mut content)?;
-        let json: HashMap<&str, String> =
-            serde_json::from_str(&content).map_err(AppError::CacheParse)?;
-        Ok(Some((
-            json["access_token"].to_string(),
-            json["refresh_token"].to_string(),
-        )))
+        let cache: TokenCache = serde_json::from_str(&content).map_err(AppError::CacheParse)?;
+
+        // request authorization again if the scopes are updated
+        if cache.scopes != self.scopes {
+            return Ok(None);
+        }
+
+        Ok(Some((cache.access_token, cache.refresh_token)))
     }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TokenCache {
+    access_token: String,
+    refresh_token: String,
+    scopes: HashSet<String>,
 }
