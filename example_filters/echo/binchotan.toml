@@ -2,3 +2,4 @@ name = "Echo"
 description = "A filter that echoes what it receives"
 author = "sei0o"
 entrypoint = "main.lua"
+scopes = [ "users.read", "tweet.read", "offline.access" ]

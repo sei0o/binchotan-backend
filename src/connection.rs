@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 use tracing::{info, warn};
@@ -153,9 +153,10 @@ pub async fn handle_request(
     req: Request,
     client: &api::ApiClient,
     filter_path: PathBuf,
+    scopes: &HashSet<String>,
 ) -> Response {
     let id = req.id.clone();
-    match handle_request_inner(req, client, filter_path).await {
+    match handle_request_inner(req, client, filter_path, scopes).await {
         Ok(resp) => resp,
         Err(err) => {
             warn!("something bad happened: {:?}", err);
@@ -173,6 +174,7 @@ async fn handle_request_inner<P>(
     req: Request,
     client: &api::ApiClient,
     filter_path: P,
+    scopes: &HashSet<String>,
 ) -> Result<Response, AppError>
 where
     P: AsRef<Path>,
@@ -216,7 +218,7 @@ where
                 "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
             );
 
-            let filters = Filter::load(filter_path.as_ref())?;
+            let filters = Filter::load(filter_path.as_ref(), scopes)?;
 
             let mut filtered_tweets = vec![];
             'outer: for tweet in tweets {

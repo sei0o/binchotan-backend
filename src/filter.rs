@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::{fs::File, io::Read, path::Path};
+use std::{collections::HashSet, fs::File, io::Read, path::Path};
 use tracing::error;
 
 use crate::{error::AppError, tweet::Tweet};
@@ -17,10 +17,11 @@ pub struct FilterMeta {
     description: String,
     author: String,
     entrypoint: String,
+    scopes: HashSet<String>,
 }
 
 impl Filter {
-    pub fn load(dir: &Path) -> Result<Vec<Filter>, AppError> {
+    pub fn load(dir: &Path, available_scopes: &HashSet<String>) -> Result<Vec<Filter>, AppError> {
         if !dir.is_dir() {
             return Err(AppError::FilterPathNotDir(dir.to_owned()));
         }
@@ -31,7 +32,7 @@ impl Filter {
                 _ => None,
             })
             .filter(|path| path.is_dir())
-            .map(|dir| match Self::load_single(&dir) {
+            .map(|dir| match Self::load_single(&dir, available_scopes) {
                 Ok(filter) => Ok(filter),
                 Err(err) => {
                     error!("could not load filter in {}/ : {}", dir.display(), err);
@@ -41,7 +42,7 @@ impl Filter {
             .collect()
     }
 
-    fn load_single(dir: &Path) -> Result<Filter, AppError> {
+    fn load_single(dir: &Path, available_scopes: &HashSet<String>) -> Result<Filter, AppError> {
         if !dir.is_dir() {
             return Err(AppError::FilterPathNotDir(dir.to_owned()));
         }
@@ -54,10 +55,15 @@ impl Filter {
         let mut src = String::new();
         File::open(&dir.join(&meta.entrypoint))?.read_to_string(&mut src)?;
 
+        let diff: Vec<String> = meta.scopes.difference(available_scopes).cloned().collect();
+        if !diff.is_empty() {
+            return Err(AppError::FilterInsufficientScopes(meta.name, diff));
+        }
+
         Ok(Filter { src, meta })
     }
 
-    /// Runs the filter on the given post. The filter is a Lua script which returns a Tweet or null.
+    /// Applies the filter on the given post. The filter is a Lua script which returns a Tweet or null.
     pub fn run(&self, tweet: &Tweet) -> Result<Option<Tweet>, AppError> {
         let lua = Lua::new();
         lua.globals().set("post", lua.to_value(tweet)?)?;

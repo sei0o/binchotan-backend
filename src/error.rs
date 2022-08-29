@@ -45,6 +45,8 @@ pub enum AppError {
     FilterPathNotDir(PathBuf),
     #[error("could not parse binchotan.toml")]
     FilterMetaParse(toml::de::Error),
+    #[error("Filter `{0}` requires an additional API scopes (permissions): {}. Review the filter and add scopes in your config if you want to.", .1.join(","))]
+    FilterInsufficientScopes(String, Vec<String>),
     #[error("mlua error: {0}")]
     Lua(#[from] mlua::Error),
     #[error("other IO error: {0}")]

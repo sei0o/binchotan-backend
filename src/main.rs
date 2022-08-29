@@ -49,11 +49,15 @@ async fn start(config: Config) -> Result<(), AppError> {
     let auth = Auth::new(
         config.twitter_client_id,
         config.twitter_client_secret,
+        config.scopes.clone(),
         config.cache_path,
     );
     let client = auth.client().await?;
 
     let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
+
+    // validate filters' scopes in advance
+    filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
 
     for stream in listener.incoming() {
         match stream {
@@ -65,8 +69,13 @@ async fn start(config: Config) -> Result<(), AppError> {
 
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                let resp =
-                    connection::handle_request(req, &client, config.filter_dir.clone()).await;
+                let resp = connection::handle_request(
+                    req,
+                    &client,
+                    config.filter_dir.clone(),
+                    &config.scopes,
+                )
+                .await;
 
                 let json = serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
                 stream.write_all(json.as_bytes())?;

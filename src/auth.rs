@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
 };
@@ -18,14 +18,21 @@ use url::Url;
 pub struct Auth {
     client_id: String,
     client_secret: String,
+    scopes: HashSet<String>,
     cache_path: String,
 }
 
 impl Auth {
-    pub fn new(client_id: String, client_secret: String, cache_path: String) -> Self {
+    pub fn new(
+        client_id: String,
+        client_secret: String,
+        scopes: HashSet<String>,
+        cache_path: String,
+    ) -> Self {
         Self {
             client_id,
             client_secret,
+            scopes,
             cache_path,
         }
     }
@@ -50,11 +57,10 @@ impl Auth {
             .set_redirect_uri(RedirectUrl::new("http://localhost:31337".to_owned())?);
 
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+        let scopes = self.scopes.clone();
         let (auth_url, state) = client
             .authorize_url(CsrfToken::new_random)
-            .add_scope(Scope::new("users.read".to_owned()))
-            .add_scope(Scope::new("tweet.read".to_owned()))
-            .add_scope(Scope::new("offline.access".to_owned()))
+            .add_scopes(scopes.into_iter().map(Scope::new))
             .set_pkce_challenge(pkce_challenge)
             .url();
 

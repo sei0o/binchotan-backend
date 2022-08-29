@@ -2,3 +2,4 @@ name = "word mute"
 description = "Mutes some words"
 author = "sei0o"
 entrypoint = "main.lua"
+scopes = [ "users.read", "tweet.read", "offline.access" ]

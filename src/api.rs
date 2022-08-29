@@ -34,7 +34,7 @@ impl ApiClient {
         match Self::id_for_token(&client, access_token).await {
             Ok(_id) => Ok(true),
             Err(AppError::ApiExpiredToken) => Ok(false),
-            Err(other) => return Err(other),
+            Err(other) => Err(other),
         }
     }
 
