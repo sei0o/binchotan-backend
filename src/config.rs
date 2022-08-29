@@ -1,7 +1,9 @@
-use std::{env, path::PathBuf};
+use serde::Deserialize;
+use std::path::PathBuf;
 
 use crate::error::AppError;
 
+#[derive(Deserialize)]
 pub struct Config {
     pub twitter_client_id: String,
     pub twitter_client_secret: String,
@@ -12,12 +14,12 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Result<Self, AppError> {
-        Ok(Self {
-            twitter_client_id: env::var("TWITTER_CLIENT_ID")?,
-            twitter_client_secret: env::var("TWITTER_CLIENT_SECRET")?,
-            socket_path: env::var("SOCKET_PATH")?,
-            cache_path: env::var("CACHE_PATH")?,
-            filter_dir: env::var("FILTER_DIR")?.into(),
-        })
+        let config: Config = config::Config::builder()
+            .add_source(config::File::with_name("config.toml"))
+            .add_source(config::Environment::with_prefix("BINCHOTAN_"))
+            .build()?
+            .try_deserialize()?;
+
+        Ok(config)
     }
 }

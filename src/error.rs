@@ -9,8 +9,8 @@ use crate::connection::Request;
 pub enum AppError {
     #[error("could not parse the cache file: {0}")]
     CacheParse(serde_json::Error),
-    #[error("Environment variable {0} is undefined")]
-    EnvVar(#[from] std::env::VarError),
+    #[error("could not load configuration: {0}")]
+    Config(#[from] config::ConfigError),
     #[error("could not start the redirect server. The port might be already occupied: {0}")]
     ServerLaunch(String),
     #[error("could not parse the API response: {0}")]

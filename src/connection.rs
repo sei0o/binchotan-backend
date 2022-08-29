@@ -123,7 +123,7 @@ impl From<AppError> for ResponseError {
         let code = match err {
             AppError::Io(_) => -32000,
             AppError::CacheParse(_) => -32000,
-            AppError::EnvVar(_) => -32000,
+            AppError::Config(_) => -32000,
             AppError::ApiResponseParse(_) => -32000,
             AppError::ApiResponseNotFound(_, _) => -32000,
             AppError::ApiResponseSerialize(_) => -32000,
