@@ -1,5 +1,6 @@
 use crate::{
-    api::ApiClient, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet, VERSION,
+    api::ApiClient, auth::Auth, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet,
+    VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -38,6 +39,8 @@ pub enum Method {
     Status,
     #[serde(rename = "v0.account.list")]
     AccountList,
+    #[serde(rename = "v0.account.add")]
+    AccountAdd,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,6 +89,8 @@ pub enum ResponseContent {
     Status { version: String },
     #[serde(rename = "result")]
     AccountList { user_ids: Vec<String> },
+    #[serde(rename = "result")]
+    AccountAdd { user_id: String },
     #[serde(rename = "error")]
     Error(ResponseError),
 }
@@ -135,7 +140,7 @@ impl From<AppError> for ResponseError {
 }
 
 pub struct Handler {
-    pub clients: HashMap<String, ApiClient>,
+    pub auth: Auth,
     pub filter_path: PathBuf,
     pub scopes: HashSet<String>,
 }
@@ -166,6 +171,7 @@ impl Handler {
             Method::HomeTimeline => self.handle_timeline(req).await,
             Method::Status => self.handle_status(req).await,
             Method::AccountList => self.handle_account_list(req).await,
+            Method::AccountAdd => self.handle_account_add(req).await,
         }
     }
 
@@ -177,10 +183,7 @@ impl Handler {
                 endpoint,
                 api_params,
             } => {
-                let client = self
-                    .clients
-                    .get(&user_id)
-                    .ok_or(AppError::RpcUnknownAccount(user_id))?;
+                let client = self.auth.client_for(&user_id).await?;
                 let resp = client.call(&http_method, &endpoint, &api_params).await?;
                 info!("got response for plain request with id {}", req.id);
 
@@ -209,10 +212,7 @@ impl Handler {
             } => (user_id, api_params),
             _ => return Err(AppError::RpcParamsMismatch(req)),
         };
-        let client = self
-            .clients
-            .get(&user_id)
-            .ok_or(AppError::RpcUnknownAccount(user_id))?;
+        let client = self.auth.client_for(&user_id).await?;
         let tweets = client.timeline(&mut params).await?;
         info!(
             "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}",
@@ -248,6 +248,7 @@ impl Handler {
             id: req.id,
         })
     }
+
     async fn handle_status(&self, req: Request) -> Result<Response, AppError> {
         let req_ = req.clone();
         match req.params {
@@ -269,6 +270,7 @@ impl Handler {
             _ => Err(AppError::RpcParamsMismatch(req)),
         }
     }
+
     async fn handle_account_list(&self, req: Request) -> Result<Response, AppError> {
         let req_ = req.clone();
         match req.params {
@@ -278,8 +280,29 @@ impl Handler {
                 }
 
                 let content = ResponseContent::AccountList {
-                    user_ids: self.clients.keys().cloned().collect(),
+                    user_ids: self.auth.user_ids()?,
                 };
+
+                Ok(Response {
+                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    content,
+                    id: req.id,
+                })
+            }
+            _ => Err(AppError::RpcParamsMismatch(req)),
+        }
+    }
+
+    async fn handle_account_add(&self, req: Request) -> Result<Response, AppError> {
+        let req_ = req.clone();
+        match req.params {
+            RequestParams::Map(prms) => {
+                if !prms.is_empty() {
+                    return Err(AppError::RpcParamsMismatch(req_));
+                }
+
+                let user_id = self.auth.add_user().await?;
+                let content = ResponseContent::AccountAdd { user_id };
 
                 Ok(Response {
                     jsonrpc: JSONRPC_VERSION.to_string(),

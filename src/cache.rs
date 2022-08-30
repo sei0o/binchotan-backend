@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -11,13 +11,12 @@ use crate::error::AppError;
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct TokenCache {
-    pub accounts: Vec<TokenCacheAccount>,
+    pub accounts: HashMap<String, TokenPair>,
     pub scopes: HashSet<String>,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct TokenCacheAccount {
-    pub id: String,
+pub struct TokenPair {
     pub access_token: String,
     pub refresh_token: String,
 }
@@ -28,13 +27,16 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, AppError> {
+    pub fn new<P: AsRef<Path>>(path: P, scopes: HashSet<String>) -> Result<Self, AppError> {
         let mut file = match File::open(path.as_ref()) {
             Ok(file) => file,
             Err(x) if x.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self {
                     cache_path: path.as_ref().to_owned(),
-                    content: TokenCache::default(),
+                    content: TokenCache {
+                        scopes,
+                        ..Default::default()
+                    },
                 })
             }
             Err(x) => return Err(x).map_err(AppError::Io),
@@ -49,8 +51,12 @@ impl Cache {
         })
     }
 
-    pub fn add_tokens(&mut self, acc: TokenCacheAccount) {
-        self.content.accounts.push(acc)
+    pub fn add_tokens(&mut self, id: String, acc: TokenPair) {
+        self.content.accounts.insert(id, acc);
+    }
+
+    pub fn tokens_for(&self, id: &str) -> Option<&TokenPair> {
+        self.content.accounts.get(id)
     }
 
     pub fn save(&self) -> Result<(), AppError> {

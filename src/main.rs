@@ -55,7 +55,6 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.scopes.clone(),
         config.cache_path,
     );
-    let clients = auth.clients().await?;
 
     let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
 
@@ -63,7 +62,7 @@ async fn start(config: Config) -> Result<(), AppError> {
     filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
 
     let handler = Handler {
-        clients,
+        auth,
         filter_path: config.filter_dir.clone(),
         scopes: config.scopes.clone(),
     };

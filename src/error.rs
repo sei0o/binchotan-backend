@@ -37,6 +37,8 @@ pub enum AppError {
     RpcVersion(String),
     #[error("unregistered user id: {0}")]
     RpcUnknownAccount(String),
+    #[error("token for user id {0} has expired")]
+    TokenExpired(String),
     #[error("could not parse the parameters in the JSON-RPC request: {0}")]
     RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
