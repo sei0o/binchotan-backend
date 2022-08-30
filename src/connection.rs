@@ -1,11 +1,12 @@
+use crate::{
+    api::ApiClient, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet, VERSION,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use tracing::{info, warn};
-
-use crate::{api, error::AppError, filter::Filter, tweet::Tweet, VERSION};
 
 pub const JSONRPC_VERSION: &str = "2.0";
 
@@ -35,14 +36,21 @@ pub enum Method {
     HomeTimeline,
     #[serde(rename = "v0.status")]
     Status,
+    #[serde(rename = "v0.account.list")]
+    AccountList,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum RequestParams {
     Plain {
+        user_id: String,
         http_method: HttpMethod,
         endpoint: String,
+        api_params: HashMap<String, serde_json::Value>,
+    },
+    MapWithId {
+        user_id: String,
         api_params: HashMap<String, serde_json::Value>,
     },
     Map(HashMap<String, serde_json::Value>),
@@ -51,31 +59,6 @@ pub enum RequestParams {
 impl Default for RequestParams {
     fn default() -> Self {
         RequestParams::Map(HashMap::new())
-    }
-}
-
-// We define an enum for HTTP request method since http::Method does not implement serde::Deserialize
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub enum HttpMethod {
-    #[serde(rename = "GET")]
-    Get,
-    #[serde(rename = "POST")]
-    Post,
-    #[serde(rename = "PUT")]
-    Put,
-    #[serde(rename = "DELETE")]
-    Delete,
-    // Twitter API does not utilize other methods
-}
-
-impl From<HttpMethod> for reqwest::Method {
-    fn from(h: HttpMethod) -> Self {
-        match h {
-            HttpMethod::Get => reqwest::Method::GET,
-            HttpMethod::Post => reqwest::Method::POST,
-            HttpMethod::Put => reqwest::Method::PUT,
-            HttpMethod::Delete => reqwest::Method::DELETE,
-        }
     }
 }
 
@@ -101,6 +84,8 @@ pub enum ResponseContent {
     },
     #[serde(rename = "result")]
     Status { version: String },
+    #[serde(rename = "result")]
+    AccountList { user_ids: Vec<String> },
     #[serde(rename = "error")]
     Error(ResponseError),
 }
@@ -149,46 +134,53 @@ impl From<AppError> for ResponseError {
     }
 }
 
-pub async fn handle_request(
-    req: Request,
-    client: &api::ApiClient,
-    filter_path: PathBuf,
-    scopes: &HashSet<String>,
-) -> Response {
-    let id = req.id.clone();
-    match handle_request_inner(req, client, filter_path, scopes).await {
-        Ok(resp) => resp,
-        Err(err) => {
-            warn!("something bad happened: {:?}", err);
-            let resp_err: ResponseError = err.into();
-            Response {
-                jsonrpc: JSONRPC_VERSION.to_string(),
-                content: ResponseContent::Error(resp_err),
-                id,
+pub struct Handler {
+    pub clients: HashMap<String, ApiClient>,
+    pub filter_path: PathBuf,
+    pub scopes: HashSet<String>,
+}
+
+impl Handler {
+    pub async fn handle(&self, req: Request) -> Response {
+        let id = req.id.clone();
+        match self.handle_inner(req).await {
+            Ok(resp) => resp,
+            Err(err) => {
+                warn!("something bad happened: {:?}", err);
+                let resp_err: ResponseError = err.into();
+                Response {
+                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    content: ResponseContent::Error(resp_err),
+                    id,
+                }
             }
         }
     }
-}
 
-async fn handle_request_inner<P>(
-    req: Request,
-    client: &api::ApiClient,
-    filter_path: P,
-    scopes: &HashSet<String>,
-) -> Result<Response, AppError>
-where
-    P: AsRef<Path>,
-{
-    info!("received a request: {:?}", req);
-    req.validate()?;
+    async fn handle_inner(&self, req: Request) -> Result<Response, AppError> {
+        info!("received a request: {:?}", req);
+        req.validate()?;
 
-    match req.method {
-        Method::Plain => match req.params {
+        match req.method {
+            Method::Plain => self.handle_plain(req).await,
+            Method::HomeTimeline => self.handle_timeline(req).await,
+            Method::Status => self.handle_status(req).await,
+            Method::AccountList => self.handle_account_list(req).await,
+        }
+    }
+
+    async fn handle_plain(&self, req: Request) -> Result<Response, AppError> {
+        match req.params {
             RequestParams::Plain {
+                user_id,
                 http_method,
                 endpoint,
                 api_params,
             } => {
+                let client = self
+                    .clients
+                    .get(&user_id)
+                    .ok_or(AppError::RpcUnknownAccount(user_id))?;
                 let resp = client.call(&http_method, &endpoint, &api_params).await?;
                 info!("got response for plain request with id {}", req.id);
 
@@ -207,65 +199,95 @@ where
                 })
             }
             _ => Err(AppError::RpcParamsMismatch(req)),
-        },
-        Method::HomeTimeline => {
-            let mut params = match req.params {
-                RequestParams::Map(api_params) => api_params,
-                _ => return Err(AppError::RpcParamsMismatch(req)),
-            };
-            let tweets = client.timeline(&mut params).await?;
-            info!(
-                "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}", tweets.len(), tweets[0]
-            );
-
-            let filters = Filter::load(filter_path.as_ref(), scopes)?;
-
-            let mut filtered_tweets = vec![];
-            'outer: for tweet in tweets {
-                let mut result = tweet;
-                for filter in &filters {
-                    match filter.run(&result)? {
-                        Some(t) => result = t,
-                        None => continue 'outer,
-                    }
-                }
-                filtered_tweets.push(result);
-            }
-
-            let content = ResponseContent::HomeTimeline {
-                meta: ResponsePlainMeta {
-                    // TODO:
-                    api_calls_remaining: 0,
-                    api_calls_reset: 0,
-                },
-                body: filtered_tweets,
-            };
-            Ok(Response {
-                jsonrpc: JSONRPC_VERSION.to_string(),
-                content,
-                id: req.id,
-            })
         }
-        Method::Status => {
-            let req_ = req.clone();
-            match req.params {
-                RequestParams::Map(prms) => {
-                    if !prms.is_empty() {
-                        return Err(AppError::RpcParamsMismatch(req_));
-                    }
+    }
+    async fn handle_timeline(&self, req: Request) -> Result<Response, AppError> {
+        let (user_id, mut params) = match req.params {
+            RequestParams::MapWithId {
+                user_id,
+                api_params,
+            } => (user_id, api_params),
+            _ => return Err(AppError::RpcParamsMismatch(req)),
+        };
+        let client = self
+            .clients
+            .get(&user_id)
+            .ok_or(AppError::RpcUnknownAccount(user_id))?;
+        let tweets = client.timeline(&mut params).await?;
+        info!(
+            "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}",
+            tweets.len(),
+            tweets[0]
+        );
 
-                    let content = ResponseContent::Status {
-                        version: VERSION.to_string(),
-                    };
+        let filters = Filter::load(self.filter_path.as_ref(), &self.scopes)?;
 
-                    Ok(Response {
-                        jsonrpc: JSONRPC_VERSION.to_string(),
-                        content,
-                        id: req.id,
-                    })
+        let mut filtered_tweets = vec![];
+        'outer: for tweet in tweets {
+            let mut result = tweet;
+            for filter in &filters {
+                match filter.run(&result)? {
+                    Some(t) => result = t,
+                    None => continue 'outer,
                 }
-                _ => Err(AppError::RpcParamsMismatch(req)),
             }
+            filtered_tweets.push(result);
+        }
+
+        let content = ResponseContent::HomeTimeline {
+            meta: ResponsePlainMeta {
+                // TODO:
+                api_calls_remaining: 0,
+                api_calls_reset: 0,
+            },
+            body: filtered_tweets,
+        };
+        Ok(Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            content,
+            id: req.id,
+        })
+    }
+    async fn handle_status(&self, req: Request) -> Result<Response, AppError> {
+        let req_ = req.clone();
+        match req.params {
+            RequestParams::Map(prms) => {
+                if !prms.is_empty() {
+                    return Err(AppError::RpcParamsMismatch(req_));
+                }
+
+                let content = ResponseContent::Status {
+                    version: VERSION.to_string(),
+                };
+
+                Ok(Response {
+                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    content,
+                    id: req.id,
+                })
+            }
+            _ => Err(AppError::RpcParamsMismatch(req)),
+        }
+    }
+    async fn handle_account_list(&self, req: Request) -> Result<Response, AppError> {
+        let req_ = req.clone();
+        match req.params {
+            RequestParams::Map(prms) => {
+                if !prms.is_empty() {
+                    return Err(AppError::RpcParamsMismatch(req_));
+                }
+
+                let content = ResponseContent::AccountList {
+                    user_ids: self.clients.keys().cloned().collect(),
+                };
+
+                Ok(Response {
+                    jsonrpc: JSONRPC_VERSION.to_string(),
+                    content,
+                    id: req.id,
+                })
+            }
+            _ => Err(AppError::RpcParamsMismatch(req)),
         }
     }
 }

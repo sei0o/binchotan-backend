@@ -1,17 +1,13 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    fs::File,
-    io::{Read, Write},
-};
-
-use crate::{api::ApiClient, error::AppError};
+use crate::{api::ApiClient, cache::Cache, error::AppError};
 use anyhow::{anyhow, Context};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
-use serde::{Deserialize, Serialize};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 use tracing::info;
 use url::Url;
 
@@ -37,17 +33,24 @@ impl Auth {
         }
     }
 
-    pub async fn client(&self) -> Result<ApiClient, AppError> {
-        let (access_token, refresh_token) = match self.load_tokens().await? {
-            Some(tokens) => tokens,
-            None => {
-                let (access, refresh) = self.generate_tokens().await?;
-                self.save_tokens(&access, &refresh)?;
-                (access, refresh)
-            }
-        };
+    pub async fn clients(&self) -> Result<HashMap<String, ApiClient>, AppError> {
+        let mut cache = Cache::new(self.cache_path.clone())?;
 
-        ApiClient::new(access_token).await
+        // invalidate if the scopes are updated
+        if cache.content.scopes != self.scopes {
+            return Ok(HashMap::new());
+        }
+
+        let mut res = HashMap::new();
+        for acc in cache.content.accounts.iter_mut() {
+            if ApiClient::validate_token(&acc.access_token).await? {
+                let client = ApiClient::new(acc.access_token.clone()).await?;
+                res.insert(client.user_id.clone(), client);
+            };
+        }
+        cache.save()?;
+
+        Ok(res)
     }
 
     /// Authenticate to Twitter.
@@ -123,54 +126,4 @@ impl Auth {
             Some(TokenUrl::new("https://api.twitter.com/2/oauth2/token".to_owned()).unwrap()),
         ))
     }
-
-    fn save_tokens(&self, access_token: &str, refresh_token: &str) -> Result<(), AppError> {
-        let mut file = File::create(&self.cache_path)?;
-        let cache = TokenCache {
-            access_token: access_token.to_owned(),
-            refresh_token: refresh_token.to_owned(),
-            scopes: self.scopes.clone(),
-        };
-        file.write_all(serde_json::to_string(&cache).unwrap().as_bytes())?;
-
-        Ok(())
-    }
-
-    pub async fn load_tokens(&self) -> Result<Option<(String, String)>, AppError> {
-        match self.load_tokens_from_cache()? {
-            Some((access, refresh)) => {
-                if ApiClient::validate_token(&access).await? {
-                    Ok(Some((access, refresh)))
-                } else {
-                    Ok(None)
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn load_tokens_from_cache(&self) -> Result<Option<(String, String)>, AppError> {
-        let mut file = match File::open(&self.cache_path) {
-            Ok(file) => file,
-            Err(x) if x.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(x) => return Err(x).map_err(AppError::Io),
-        };
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-        let cache: TokenCache = serde_json::from_str(&content).map_err(AppError::CacheParse)?;
-
-        // request authorization again if the scopes are updated
-        if cache.scopes != self.scopes {
-            return Ok(None);
-        }
-
-        Ok(Some((cache.access_token, cache.refresh_token)))
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct TokenCache {
-    access_token: String,
-    refresh_token: String,
-    scopes: HashSet<String>,
 }

@@ -4,8 +4,8 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, StatusCode};
 use tracing::debug;
 
-use crate::connection::HttpMethod;
 use crate::error::AppError;
+use crate::methods::HttpMethod;
 use crate::tweet::Tweet;
 
 // TODO: use a crate dedicated for the twitter api?
@@ -13,7 +13,7 @@ use crate::tweet::Tweet;
 
 pub struct ApiClient {
     client: Client,
-    user_id: String,
+    pub user_id: String,
     access_token: String,
 }
 

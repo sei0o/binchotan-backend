@@ -35,6 +35,8 @@ pub enum AppError {
     SocketPayloadParse(serde_json::Error),
     #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
     RpcVersion(String),
+    #[error("unregistered user id: {0}")]
+    RpcUnknownAccount(String),
     #[error("could not parse the parameters in the JSON-RPC request: {0}")]
     RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]

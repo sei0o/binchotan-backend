@@ -5,17 +5,20 @@ use std::{
 };
 
 use anyhow::Context;
+use connection::Handler;
 use error::AppError;
-use tracing::{error, info, warn};
+use tracing::error;
 
 use crate::{auth::Auth, config::Config, connection::Request};
 
 mod api;
 mod auth;
+mod cache;
 mod config;
 mod connection;
 mod error;
 mod filter;
+mod methods;
 mod tweet;
 
 const VERSION: &str = "0.1.0";
@@ -52,12 +55,18 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.scopes.clone(),
         config.cache_path,
     );
-    let client = auth.client().await?;
+    let clients = auth.clients().await?;
 
     let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
 
     // validate filters' scopes in advance
     filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
+
+    let handler = Handler {
+        clients,
+        filter_path: config.filter_dir.clone(),
+        scopes: config.scopes.clone(),
+    };
 
     for stream in listener.incoming() {
         match stream {
@@ -69,15 +78,9 @@ async fn start(config: Config) -> Result<(), AppError> {
 
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                let resp = connection::handle_request(
-                    req,
-                    &client,
-                    config.filter_dir.clone(),
-                    &config.scopes,
-                )
-                .await;
-
+                let resp = handler.handle(req).await;
                 let json = serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
+
                 stream.write_all(json.as_bytes())?;
                 stream.flush()?;
             }
