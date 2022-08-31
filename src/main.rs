@@ -1,13 +1,12 @@
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixListener,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::Context;
 use connection::Handler;
 use error::AppError;
-use tracing::error;
 
 use crate::{auth::Auth, config::Config, connection::Request};
 
@@ -29,22 +28,12 @@ async fn main() -> Result<(), AppError> {
     tracing_subscriber::fmt::init();
 
     let config = Config::new()?;
-    let sock_path = config.socket_path.clone();
-
-    ctrlc::set_handler({
-        let path = config.socket_path.clone();
-        move || match fini(&path) {
-            Ok(_) => {}
-            Err(err) => error!("{}", err),
-        }
-    })
-    .context("could not create a Ctrl-C(SIGINT) handler")?;
 
     let result = start(config).await;
     if let Err(err) = &result {
         println!("{}", err);
     }
-    fini(&sock_path)?;
+
     result
 }
 
@@ -56,7 +45,14 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.cache_path,
     );
 
-    let listener = UnixListener::bind(config.socket_path).map_err(AppError::SocketBind)?;
+    let listener = Listener::new(&config.socket_path)?;
+
+    let sock_path = config.socket_path.clone();
+    ctrlc::set_handler(move || {
+        std::fs::remove_file(&sock_path).unwrap();
+        std::process::exit(0);
+    })
+    .context("could not create a Ctrl-C(SIGINT) handler")?;
 
     // validate filters' scopes in advance
     filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
@@ -67,7 +63,7 @@ async fn start(config: Config) -> Result<(), AppError> {
         scopes: config.scopes.clone(),
     };
 
-    for stream in listener.incoming() {
+    for stream in listener.socket.incoming() {
         match stream {
             Ok(mut stream) => {
                 let stream_ = stream.try_clone()?;
@@ -90,11 +86,22 @@ async fn start(config: Config) -> Result<(), AppError> {
     Ok(())
 }
 
-fn fini<P>(sock_path: P) -> Result<(), AppError>
-where
-    P: AsRef<Path>,
-{
-    std::fs::remove_file(sock_path.as_ref())?;
-    // TODO: better termination?
-    std::process::exit(0);
+struct Listener {
+    socket: UnixListener,
+    path: PathBuf,
+}
+
+impl Listener {
+    pub fn new<T: AsRef<Path>>(socket_path: T) -> Result<Self, AppError> {
+        Ok(Self {
+            socket: UnixListener::bind(socket_path.as_ref()).map_err(AppError::SocketBind)?,
+            path: socket_path.as_ref().to_owned(),
+        })
+    }
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.path).unwrap();
+    }
 }
