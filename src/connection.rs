@@ -156,6 +156,7 @@ impl From<AppError> for ResponseError {
             AppError::ApiResponseSerialize(_) => RpcError::Server(RpcServerError::Api),
             AppError::ApiRequest(_) => RpcError::Server(RpcServerError::Api),
             AppError::ApiResponseStatus(_, _) => RpcError::Server(RpcServerError::ApiStatus),
+            AppError::TokenExpired(_) => RpcError::Server(RpcServerError::Api),
             AppError::OAuth(_) => RpcError::Server(RpcServerError::Api),
             AppError::OAuthUrlParse(_) => RpcError::Server(RpcServerError::Api),
             AppError::SocketPayloadParse(_) => RpcError::Parse,
@@ -164,7 +165,6 @@ impl From<AppError> for ResponseError {
             AppError::RpcParamsMismatch(_) => RpcError::InvalidParams,
             AppError::Lua(_) => RpcError::Server(RpcServerError::Lua),
             AppError::Other(_) => RpcError::Server(RpcServerError::Other),
-            AppError::ApiExpiredToken => RpcError::Server(RpcServerError::Api),
             // errors which should be thrown during initialization
             _ => unreachable!(),
         }

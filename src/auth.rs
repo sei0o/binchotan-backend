@@ -6,7 +6,8 @@ use crate::{
 use anyhow::{anyhow, Context};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, RefreshToken, Scope, TokenResponse,
+    TokenUrl,
 };
 use std::{
     borrow::Cow,
@@ -43,22 +44,33 @@ impl Auth {
     }
 
     pub async fn client_for(&self, user_id: &str) -> Result<ApiClient, AppError> {
-        let cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
+        let mut cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
 
         // invalidate if the scopes are updated
         if cache.content.scopes != self.scopes {
-            return Err(AppError::TokenExpired(user_id.to_owned()));
+            return Err(AppError::TokenExpired(Some(user_id.to_owned())));
         }
 
         let token = cache
             .tokens_for(user_id)
-            .ok_or(AppError::RpcUnknownAccount(user_id.to_owned()))?;
+            .ok_or_else(|| AppError::RpcUnknownAccount(user_id.into()))?;
 
         if !ApiClient::validate_token(&token.access_token).await? {
-            return Err(AppError::TokenExpired(user_id.to_owned()));
+            return match self.refresh_tokens(token.refresh_token.clone()).await {
+                Ok((acc, refr)) => {
+                    let pair = cache.content.accounts.get_mut(user_id).unwrap();
+                    *pair = TokenPair {
+                        access_token: acc.clone(),
+                        refresh_token: refr,
+                    };
+                    cache.save()?;
+                    ApiClient::new(acc).await
+                }
+                Err(_) => return Err(AppError::TokenExpired(Some(user_id.to_owned()))),
+            };
         }
 
-        Ok(ApiClient::new(token.access_token.clone()).await?)
+        ApiClient::new(token.access_token.clone()).await
     }
 
     pub async fn clients(&self) -> Result<HashMap<String, ApiClient>, AppError> {
@@ -161,6 +173,35 @@ impl Auth {
         req.respond(resp)?;
 
         Ok((access_token, refresh_token))
+    }
+
+    /// Refresh tokens to obtain a fresh access token using the refresh token received in advance.
+    pub async fn refresh_tokens(
+        &self,
+        refresh_token: String,
+    ) -> Result<(String, String), AppError> {
+        let refresh_token = RefreshToken::new(refresh_token);
+        let scopes = self.scopes.clone();
+        let client = self
+            .create_client()?
+            .set_redirect_uri(RedirectUrl::new("http://localhost:31337".to_owned())?);
+
+        let result = client
+            .exchange_refresh_token(&refresh_token)
+            .add_scopes(scopes.into_iter().map(Scope::new))
+            .request_async(async_http_client)
+            .await
+            .context("failed to exchange refresh token for access token")?;
+        let access_token = result.access_token().secret().to_owned();
+        let new_refresh_token = match result.refresh_token() {
+            Some(x) => x.secret(),
+            None => refresh_token.secret(),
+        }
+        .to_owned();
+
+        info!("Tokens refreshed: {}, {}", access_token, new_refresh_token);
+
+        Ok((access_token, new_refresh_token))
     }
 
     fn create_client(&self) -> Result<BasicClient, AppError> {

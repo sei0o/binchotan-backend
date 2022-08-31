@@ -33,7 +33,7 @@ impl ApiClient {
         let client = Client::new();
         match Self::id_for_token(&client, access_token).await {
             Ok(_id) => Ok(true),
-            Err(AppError::ApiExpiredToken) => Ok(false),
+            Err(AppError::TokenExpired(_)) => Ok(false),
             Err(other) => Err(other),
         }
     }
@@ -49,7 +49,7 @@ impl ApiClient {
         let json = resp.text().await?;
         match status {
             x if x.is_success() => {}
-            StatusCode::UNAUTHORIZED => return Err(AppError::ApiExpiredToken),
+            StatusCode::UNAUTHORIZED => return Err(AppError::TokenExpired(None)),
             other => return Err(AppError::ApiResponseStatus(other.as_u16(), json)),
         }
 

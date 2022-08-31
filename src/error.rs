@@ -23,8 +23,6 @@ pub enum AppError {
     ApiRequest(#[from] reqwest::Error),
     #[error("the API has given a non-successful status code ({0}): {1}")]
     ApiResponseStatus(u16, String),
-    #[error("Access token is expired")]
-    ApiExpiredToken,
     #[error("OAuth2 error: {0:?}")]
     OAuth(anyhow::Error),
     #[error("could not parse the URL: {0}")]
@@ -37,8 +35,8 @@ pub enum AppError {
     RpcVersion(String),
     #[error("unregistered user id: {0}")]
     RpcUnknownAccount(String),
-    #[error("token for user id {0} has expired")]
-    TokenExpired(String),
+    #[error("token for user id {0:?} has expired")]
+    TokenExpired(Option<String>),
     #[error("could not parse the parameters in the JSON-RPC request: {0}")]
     RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
