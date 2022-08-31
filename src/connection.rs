@@ -1,6 +1,5 @@
 use crate::{
-    api::ApiClient, auth::Auth, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet,
-    VERSION,
+    auth::Auth, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet, VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -108,28 +107,68 @@ pub struct ResponseError {
     pub data: Option<serde_json::Value>,
 }
 
+enum RpcError {
+    Parse,
+    InvalidRequest,
+    MethodNotFound,
+    InvalidParams,
+    Internal,
+    Server(RpcServerError),
+}
+
+impl From<RpcError> for isize {
+    fn from(err: RpcError) -> Self {
+        match err {
+            RpcError::Parse => -32700,
+            RpcError::InvalidRequest => -32600,
+            RpcError::MethodNotFound => -32601,
+            RpcError::InvalidParams => -32602,
+            RpcError::Internal => -32603,
+            RpcError::Server(c) => c.into(),
+        }
+    }
+}
+
+enum RpcServerError {
+    Api,
+    ApiStatus,
+    Lua,
+    Other,
+}
+
+impl From<RpcServerError> for isize {
+    fn from(err: RpcServerError) -> Self {
+        match err {
+            RpcServerError::Api => -32000,
+            RpcServerError::ApiStatus => -32001,
+            RpcServerError::Lua => -32002,
+            RpcServerError::Other => -32099,
+        }
+    }
+}
+
 impl From<AppError> for ResponseError {
     fn from(err: AppError) -> Self {
         let code = match err {
-            AppError::Io(_) => -32000,
-            AppError::ApiResponseParse(_) => -32000,
-            AppError::ApiResponseNotFound(_, _) => -32000,
-            AppError::ApiResponseSerialize(_) => -32000,
-            AppError::ApiRequest(_) => -32000,
-            AppError::ApiResponseStatus(_, _) => -32001,
-            AppError::OAuth(_) => -32000,
-            AppError::OAuthUrlParse(_) => -32000,
-            AppError::SocketPayloadParse(_) => -32700,
-            AppError::RpcVersion(_) => -32600,
-            AppError::RpcParamsParse(_) => -32700,
-            AppError::RpcParamsMismatch(_) => -32602,
-            AppError::RpcTooLarge => -32603,
-            AppError::Lua(_) => -32002,
-            AppError::Other(_) => -32099,
-            AppError::ApiExpiredToken => -32000,
+            AppError::Io(_) => RpcError::Server(RpcServerError::Other),
+            AppError::ApiResponseParse(_) => RpcError::Server(RpcServerError::Api),
+            AppError::ApiResponseNotFound(_, _) => RpcError::Server(RpcServerError::Api),
+            AppError::ApiResponseSerialize(_) => RpcError::Server(RpcServerError::Api),
+            AppError::ApiRequest(_) => RpcError::Server(RpcServerError::Api),
+            AppError::ApiResponseStatus(_, _) => RpcError::Server(RpcServerError::ApiStatus),
+            AppError::OAuth(_) => RpcError::Server(RpcServerError::Api),
+            AppError::OAuthUrlParse(_) => RpcError::Server(RpcServerError::Api),
+            AppError::SocketPayloadParse(_) => RpcError::Parse,
+            AppError::RpcVersion(_) => RpcError::InvalidRequest,
+            AppError::RpcParamsParse(_) => RpcError::Parse,
+            AppError::RpcParamsMismatch(_) => RpcError::InvalidParams,
+            AppError::Lua(_) => RpcError::Server(RpcServerError::Lua),
+            AppError::Other(_) => RpcError::Server(RpcServerError::Other),
+            AppError::ApiExpiredToken => RpcError::Server(RpcServerError::Api),
             // errors which should be thrown during initialization
             _ => unreachable!(),
-        };
+        }
+        .into();
 
         ResponseError {
             code,

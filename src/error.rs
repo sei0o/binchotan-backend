@@ -43,8 +43,6 @@ pub enum AppError {
     RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
     RpcParamsMismatch(Request),
-    #[error("too large payload")]
-    RpcTooLarge,
     #[error("the given path ({0}) is not a directory")]
     FilterPathNotDir(PathBuf),
     #[error("could not parse binchotan.toml")]
