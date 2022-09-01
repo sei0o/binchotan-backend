@@ -43,6 +43,7 @@ async fn start(config: Config) -> Result<(), AppError> {
     let auth = Auth::new(
         config.twitter_client_id,
         config.twitter_client_secret,
+        config.redirect_host,
         config.scopes.clone(),
     );
     let store = CredentialStore::new(config.cache_path.into(), auth)?;

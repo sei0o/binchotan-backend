@@ -12,14 +12,21 @@ use url::Url;
 pub struct Auth {
     client_id: String,
     client_secret: String,
+    redirect_host: String,
     pub scopes: HashSet<String>,
 }
 
 impl Auth {
-    pub fn new(client_id: String, client_secret: String, scopes: HashSet<String>) -> Self {
+    pub fn new(
+        client_id: String,
+        client_secret: String,
+        redirect_host: String,
+        scopes: HashSet<String>,
+    ) -> Self {
         Self {
             client_id,
             client_secret,
+            redirect_host,
             scopes,
         }
     }
@@ -28,7 +35,7 @@ impl Auth {
     pub async fn generate_tokens(&self) -> Result<(String, String), AppError> {
         let client = self
             .create_client()?
-            .set_redirect_uri(RedirectUrl::new("http://localhost:31337".to_owned())?);
+            .set_redirect_uri(RedirectUrl::new(format!("http://{}", self.redirect_host))?);
 
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let scopes = self.scopes.clone();
@@ -41,10 +48,10 @@ impl Auth {
         // use a web server
         open::that(auth_url.as_str()).unwrap_or_else(|_| println!("Browse to: {}", auth_url));
         // TODO: let users choose which port to use
-        let server = tiny_http::Server::http("localhost:31337")
+        let server = tiny_http::Server::http(self.redirect_host.clone())
             .map_err(|e| AppError::ServerLaunch(e.to_string()))?;
         let req = server.recv()?;
-        let pairs = Url::parse(&format!("http://localhost:31337/{}", req.url()))?;
+        let pairs = Url::parse(&format!("http://{}/{}", self.redirect_host, req.url()))?;
         let auth_code = pairs
             .query_pairs()
             .find_map(|(k, v)| match k {
