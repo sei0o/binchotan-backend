@@ -10,58 +10,63 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 
 #[derive(Deserialize, Serialize, Default)]
-pub struct TokenCache {
-    pub accounts: HashMap<String, TokenPair>,
+pub struct Cache {
+    pub accounts: HashMap<String, Credential>,
     pub scopes: HashSet<String>,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct TokenPair {
+#[derive(Deserialize, Serialize, Clone)]
+pub struct Credential {
     pub access_token: String,
     pub refresh_token: String,
+    #[serde(skip)]
+    pub state: CredentialState,
 }
 
-pub struct Cache {
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
+pub enum CredentialState {
+    #[default]
+    Cached,
+    Expired,
+    Valid,
+}
+
+/// キャッシュの読み書きを行います。トークンなどの情報は有効であるとは限らないので、別途検証する必要があります。
+pub struct CacheManager {
     cache_path: PathBuf,
-    pub content: TokenCache,
 }
 
-impl Cache {
-    pub fn new<P: AsRef<Path>>(path: P, scopes: HashSet<String>) -> Result<Self, AppError> {
-        let mut file = match File::open(path.as_ref()) {
+impl CacheManager {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, AppError> {
+        Ok(Self {
+            cache_path: path.as_ref().to_owned(),
+        })
+    }
+
+    pub fn load(&self) -> Result<Option<Cache>, AppError> {
+        let mut file = match File::open(&self.cache_path) {
             Ok(file) => file,
-            Err(x) if x.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self {
-                    cache_path: path.as_ref().to_owned(),
-                    content: TokenCache {
-                        scopes,
-                        ..Default::default()
-                    },
-                })
-            }
+            Err(x) if x.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(x) => return Err(x).map_err(AppError::Io),
         };
         let mut s = String::new();
         file.read_to_string(&mut s)?;
-        let content: TokenCache = serde_json::from_str(&s).map_err(AppError::CacheParse)?;
+        let content: Cache = serde_json::from_str(&s).map_err(AppError::CacheParse)?;
 
-        Ok(Self {
-            cache_path: path.as_ref().to_owned(),
-            content,
-        })
+        Ok(Some(content))
     }
 
-    pub fn add_tokens(&mut self, id: String, acc: TokenPair) {
-        self.content.accounts.insert(id, acc);
-    }
-
-    pub fn tokens_for(&self, id: &str) -> Option<&TokenPair> {
-        self.content.accounts.get(id)
-    }
-
-    pub fn save(&self) -> Result<(), AppError> {
+    pub fn save(
+        &self,
+        scopes: HashSet<String>,
+        credentials: HashMap<String, Credential>,
+    ) -> Result<(), AppError> {
+        let content = Cache {
+            scopes,
+            accounts: credentials.into_iter().collect(),
+        };
         let mut file = File::create(&self.cache_path)?;
-        file.write_all(serde_json::to_string(&self.content).unwrap().as_bytes())?;
+        file.write_all(serde_json::to_string(&content).unwrap().as_bytes())?;
         Ok(())
     }
 }

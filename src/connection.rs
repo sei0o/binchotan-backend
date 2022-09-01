@@ -1,5 +1,6 @@
 use crate::{
-    auth::Auth, error::AppError, filter::Filter, methods::HttpMethod, tweet::Tweet, VERSION,
+    credential::CredentialStore, error::AppError, filter::Filter, methods::HttpMethod,
+    tweet::Tweet, VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -179,13 +180,13 @@ impl From<AppError> for ResponseError {
 }
 
 pub struct Handler {
-    pub auth: Auth,
+    pub store: CredentialStore,
     pub filter_path: PathBuf,
     pub scopes: HashSet<String>,
 }
 
 impl Handler {
-    pub async fn handle(&self, req: Request) -> Response {
+    pub async fn handle(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         match self.handle_inner(req).await {
             Ok(resp) => resp,
@@ -201,7 +202,7 @@ impl Handler {
         }
     }
 
-    async fn handle_inner(&self, req: Request) -> Result<Response, AppError> {
+    async fn handle_inner(&mut self, req: Request) -> Result<Response, AppError> {
         info!("received a request: {:?}", req);
         req.validate()?;
 
@@ -222,7 +223,7 @@ impl Handler {
                 endpoint,
                 api_params,
             } => {
-                let client = self.auth.client_for(&user_id).await?;
+                let client = self.store.client_for(&user_id).await?;
                 let resp = client.call(&http_method, &endpoint, &api_params).await?;
                 info!("got response for plain request with id {}", req.id);
 
@@ -251,7 +252,7 @@ impl Handler {
             } => (user_id, api_params),
             _ => return Err(AppError::RpcParamsMismatch(req)),
         };
-        let client = self.auth.client_for(&user_id).await?;
+        let client = self.store.client_for(&user_id).await?;
         let tweets = client.timeline(&mut params).await?;
         info!(
             "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}",
@@ -319,7 +320,7 @@ impl Handler {
                 }
 
                 let content = ResponseContent::AccountList {
-                    user_ids: self.auth.user_ids()?,
+                    user_ids: self.store.user_ids()?,
                 };
 
                 Ok(Response {
@@ -332,7 +333,7 @@ impl Handler {
         }
     }
 
-    async fn handle_account_add(&self, req: Request) -> Result<Response, AppError> {
+    async fn handle_account_add(&mut self, req: Request) -> Result<Response, AppError> {
         let req_ = req.clone();
         match req.params {
             RequestParams::Map(prms) => {
@@ -340,7 +341,7 @@ impl Handler {
                     return Err(AppError::RpcParamsMismatch(req_));
                 }
 
-                let user_id = self.auth.add_user().await?;
+                let user_id = self.store.auth().await?;
                 let content = ResponseContent::AccountAdd { user_id };
 
                 Ok(Response {

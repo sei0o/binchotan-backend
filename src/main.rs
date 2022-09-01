@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Context;
 use connection::Handler;
+use credential::CredentialStore;
 use error::AppError;
 
 use crate::{auth::Auth, config::Config, connection::Request};
@@ -15,6 +16,7 @@ mod auth;
 mod cache;
 mod config;
 mod connection;
+mod credential;
 mod error;
 mod filter;
 mod methods;
@@ -42,8 +44,8 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.twitter_client_id,
         config.twitter_client_secret,
         config.scopes.clone(),
-        config.cache_path,
     );
+    let store = CredentialStore::new(config.cache_path.into(), auth)?;
 
     let listener = Listener::new(&config.socket_path)?;
 
@@ -57,8 +59,8 @@ async fn start(config: Config) -> Result<(), AppError> {
     // validate filters' scopes in advance
     filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
 
-    let handler = Handler {
-        auth,
+    let mut handler = Handler {
+        store,
         filter_path: config.filter_dir.clone(),
         scopes: config.scopes.clone(),
     };

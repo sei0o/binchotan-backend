@@ -1,114 +1,27 @@
-use crate::{
-    api::ApiClient,
-    cache::{Cache, TokenPair},
-    error::AppError,
-};
+use crate::error::AppError;
 use anyhow::{anyhow, Context};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, RefreshToken, Scope, TokenResponse,
     TokenUrl,
 };
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-};
+use std::{borrow::Cow, collections::HashSet};
 use tracing::info;
 use url::Url;
 
 pub struct Auth {
     client_id: String,
     client_secret: String,
-    scopes: HashSet<String>,
-    cache_path: String,
+    pub scopes: HashSet<String>,
 }
 
 impl Auth {
-    pub fn new(
-        client_id: String,
-        client_secret: String,
-        scopes: HashSet<String>,
-        cache_path: String,
-    ) -> Self {
+    pub fn new(client_id: String, client_secret: String, scopes: HashSet<String>) -> Self {
         Self {
             client_id,
             client_secret,
             scopes,
-            cache_path,
         }
-    }
-
-    pub fn user_ids(&self) -> Result<Vec<String>, AppError> {
-        let cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
-        Ok(cache.content.accounts.keys().cloned().collect())
-    }
-
-    pub async fn client_for(&self, user_id: &str) -> Result<ApiClient, AppError> {
-        let mut cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
-
-        // invalidate if the scopes are updated
-        if cache.content.scopes != self.scopes {
-            return Err(AppError::TokenExpired(Some(user_id.to_owned())));
-        }
-
-        let token = cache
-            .tokens_for(user_id)
-            .ok_or_else(|| AppError::RpcUnknownAccount(user_id.into()))?;
-
-        if !ApiClient::validate_token(&token.access_token).await? {
-            return match self.refresh_tokens(token.refresh_token.clone()).await {
-                Ok((acc, refr)) => {
-                    let pair = cache.content.accounts.get_mut(user_id).unwrap();
-                    *pair = TokenPair {
-                        access_token: acc.clone(),
-                        refresh_token: refr,
-                    };
-                    cache.save()?;
-                    ApiClient::new(acc).await
-                }
-                Err(_) => return Err(AppError::TokenExpired(Some(user_id.to_owned()))),
-            };
-        }
-
-        ApiClient::new(token.access_token.clone()).await
-    }
-
-    pub async fn clients(&self) -> Result<HashMap<String, ApiClient>, AppError> {
-        let mut cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
-
-        // invalidate if the scopes are updated
-        if cache.content.scopes != self.scopes {
-            cache.content.accounts = HashMap::new();
-            cache.save()?;
-            return Ok(HashMap::new());
-        }
-
-        let mut res = HashMap::new();
-        for (id, acc) in cache.content.accounts.iter_mut() {
-            if ApiClient::validate_token(&acc.access_token).await? {
-                let client = ApiClient::new(acc.access_token.clone()).await?;
-                res.insert(id.clone(), client);
-            };
-        }
-        // TODO: update cache
-
-        Ok(res)
-    }
-
-    pub async fn add_user(&self) -> Result<String, AppError> {
-        let (acc, refr) = self.generate_tokens().await?;
-        let client = ApiClient::new(acc.clone()).await?;
-
-        // update cache
-        let mut cache = Cache::new(self.cache_path.clone(), self.scopes.clone())?;
-        let pair = TokenPair {
-            access_token: acc,
-            refresh_token: refr,
-        };
-        cache.add_tokens(client.user_id.clone(), pair);
-        cache.save()?;
-
-        Ok(client.user_id)
     }
 
     /// Authenticate to Twitter.
