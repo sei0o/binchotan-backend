@@ -4,6 +4,8 @@ use std::{
     path::PathBuf,
 };
 
+use tracing::info;
+
 use crate::{
     api::ApiClient,
     auth::Auth,
@@ -56,6 +58,7 @@ impl CredentialStore {
                 }
 
                 if state == CredentialState::Valid {
+                    info!("found valid token for {user_id}");
                     match ApiClient::new(cred.access_token.clone()).await {
                         Ok(client) => return Ok(client),
                         Err(_) => state = CredentialState::Expired,
@@ -63,6 +66,7 @@ impl CredentialStore {
                 }
 
                 if state == CredentialState::Expired {
+                    info!("found expired token for {user_id}, refreshing...");
                     match self.auth.refresh_tokens(cred.refresh_token.clone()).await {
                         Ok((acc, refr)) => {
                             {
@@ -73,6 +77,7 @@ impl CredentialStore {
                                 cred.refresh_token = refr;
                             }
                             self.save()?;
+                            info!("successfully refreshed tokens");
                             return ApiClient::new(acc).await;
                         }
                         Err(e) => return Err(e),
