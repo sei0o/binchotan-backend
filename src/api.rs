@@ -63,11 +63,11 @@ impl ApiClient {
         Ok(id)
     }
 
-    /// Calls `users/:id/timelines/reverse_chronological` endpoint to fetch the home timeline of the user.
+    /// Calls `users/:id/timelines/reverse_chronological` endpoint to fetch the home timeline of the user. Returns the response body, the remaining calls (`x-rate-limit-remaining`), and the end of the current rate-limiting time window in epoch seconds (`x-rate-limit-reset`), in this order.
     pub async fn timeline(
         &self,
         params: &mut HashMap<String, serde_json::Value>,
-    ) -> Result<Vec<Tweet>, AppError> {
+    ) -> Result<(Vec<Tweet>, usize, usize), AppError> {
         let endpoint = format!(
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
@@ -100,23 +100,34 @@ impl ApiClient {
             serde_json::json!(tweet_fields.join(",")),
         );
 
-        let json = self
+        let resp = self
             .client
             .get(endpoint)
             .query(params)
             .bearer_auth(self.access_token.to_owned())
             .header(CONTENT_TYPE, "application/json")
             .send()
-            .await?
-            .text()
             .await?;
-        let resp: serde_json::Value =
-            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
-        debug!("{:?}", resp);
-        let data = &resp["data"];
-        let tweets: Vec<Tweet> =
-            serde_json::value::from_value(data.clone()).map_err(AppError::ApiResponseParse)?;
-        Ok(tweets)
+
+        let remaining = Self::get_header(&resp, "x-rate-limit-remaining")
+            .map_err(AppError::ApiResponseHeader)?;
+        let reset =
+            Self::get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
+
+        let status = resp.status();
+        let json = resp.text().await?;
+        match status {
+            x if x.is_success() => {
+                let content: serde_json::Value =
+                    serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+                debug!("{:?}", content);
+                let data = &content["data"];
+                let tweets: Vec<Tweet> = serde_json::value::from_value(data.clone())
+                    .map_err(AppError::ApiResponseParse)?;
+                Ok((tweets, remaining, reset))
+            }
+            x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
+        }
     }
 
     /// Calls an arbitrary endpoint with the method and the parameters given in the arguments. Path parameters such as `:id` are replace with those of the authenticating user. Returns the response body, the remaining calls (`x-rate-limit-remaining`), and the end of the current rate-limiting time window in epoch seconds (`x-rate-limit-reset`), in this order.
@@ -139,17 +150,10 @@ impl ApiClient {
             .await?;
         let status = resp.status();
 
-        fn get_header(resp: &Response, key: &str) -> Result<usize, anyhow::Error> {
-            let value = resp.headers().get(key).context("header not found")?;
-            let st = value.to_str().context("invalid header")?;
-            let num = st.parse::<usize>().context("invalid header")?;
-            Ok(num)
-        }
-
-        let remaining =
-            get_header(&resp, "x-rate-limit-remaining").map_err(AppError::ApiResponseHeader)?;
-        let reset = get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
-
+        let remaining = Self::get_header(&resp, "x-rate-limit-remaining")
+            .map_err(AppError::ApiResponseHeader)?;
+        let reset =
+            Self::get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
         let json = resp.text().await?;
 
         match status {
@@ -161,5 +165,12 @@ impl ApiClient {
             }
             x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
         }
+    }
+
+    fn get_header(resp: &Response, key: &str) -> Result<usize, anyhow::Error> {
+        let value = resp.headers().get(key).context("header not found")?;
+        let st = value.to_str().context("invalid header")?;
+        let num = st.parse::<usize>().context("invalid header")?;
+        Ok(num)
     }
 }

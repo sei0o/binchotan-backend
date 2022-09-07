@@ -254,7 +254,7 @@ impl Handler {
             _ => return Err(AppError::RpcParamsMismatch(req)),
         };
         let client = self.store.client_for(&user_id).await?;
-        let tweets = client.timeline(&mut params).await?;
+        let (tweets, remaining, reset) = client.timeline(&mut params).await?;
         info!(
             "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}",
             tweets.len(),
@@ -277,9 +277,8 @@ impl Handler {
 
         let content = ResponseContent::HomeTimeline {
             meta: ResponsePlainMeta {
-                // TODO:
-                api_calls_remaining: 0,
-                api_calls_reset: 0,
+                api_calls_remaining: remaining,
+                api_calls_reset: reset,
             },
             body: filtered_tweets,
         };
