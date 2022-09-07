@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::error::AppError;
@@ -10,7 +11,13 @@ use crate::methods::HttpMethod;
 use crate::tweet::Tweet;
 
 // TODO: use a crate dedicated for the twitter api?
-// TODO: pagination
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HomeTimelineResponseBody {
+    pub data: Vec<Tweet>,
+    pub includes: Option<serde_json::Value>,
+    pub meta: serde_json::Value,
+}
 
 pub struct ApiClient {
     client: Client,
@@ -67,7 +74,7 @@ impl ApiClient {
     pub async fn timeline(
         &self,
         params: &mut HashMap<String, serde_json::Value>,
-    ) -> Result<(Vec<Tweet>, usize, usize), AppError> {
+    ) -> Result<(HomeTimelineResponseBody, usize, usize), AppError> {
         let endpoint = format!(
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
@@ -121,10 +128,9 @@ impl ApiClient {
                 let content: serde_json::Value =
                     serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
                 debug!("{:?}", content);
-                let data = &content["data"];
-                let tweets: Vec<Tweet> = serde_json::value::from_value(data.clone())
-                    .map_err(AppError::ApiResponseParse)?;
-                Ok((tweets, remaining, reset))
+                let body: HomeTimelineResponseBody =
+                    serde_json::value::from_value(content).map_err(AppError::ApiResponseParse)?;
+                Ok((body, remaining, reset))
             }
             x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
         }

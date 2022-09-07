@@ -1,6 +1,6 @@
 use crate::{
-    credential::CredentialStore, error::AppError, filter::Filter, methods::HttpMethod,
-    tweet::Tweet, VERSION,
+    api::HomeTimelineResponseBody, credential::CredentialStore, error::AppError, filter::Filter,
+    methods::HttpMethod, tweet::Tweet, VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -83,7 +83,7 @@ pub enum ResponseContent {
     #[serde(rename = "result")]
     HomeTimeline {
         meta: ResponsePlainMeta,
-        body: Vec<Tweet>,
+        body: HomeTimelineResponseBody,
     },
     #[serde(rename = "result")]
     Status { version: String },
@@ -254,11 +254,18 @@ impl Handler {
             _ => return Err(AppError::RpcParamsMismatch(req)),
         };
         let client = self.store.client_for(&user_id).await?;
-        let (tweets, remaining, reset) = client.timeline(&mut params).await?;
+        let (
+            HomeTimelineResponseBody {
+                data: tweets,
+                includes,
+                meta,
+            },
+            remaining,
+            reset,
+        ) = client.timeline(&mut params).await?;
         info!(
-            "successfully retrieved {} tweets (reverse_chronological). here's one of them: {:?}",
+            "successfully retrieved {} tweets (reverse_chronological)",
             tweets.len(),
-            tweets[0]
         );
 
         let filters = Filter::load(self.filter_path.as_ref(), &self.scopes)?;
@@ -280,7 +287,11 @@ impl Handler {
                 api_calls_remaining: remaining,
                 api_calls_reset: reset,
             },
-            body: filtered_tweets,
+            body: HomeTimelineResponseBody {
+                data: filtered_tweets,
+                includes,
+                meta,
+            },
         };
         Ok(Response {
             jsonrpc: JSONRPC_VERSION.to_string(),
