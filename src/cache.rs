@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::error::AppError;
 
@@ -51,9 +52,14 @@ impl CacheManager {
         };
         let mut s = String::new();
         file.read_to_string(&mut s)?;
-        let content: Cache = serde_json::from_str(&s).map_err(AppError::CacheParse)?;
 
-        Ok(Some(content))
+        match serde_json::from_str::<Cache>(&s) {
+            Ok(content) => Ok(Some(content)),
+            Err(err) => {
+                warn!("the cache file is corrupt. ignoring it: {}", err);
+                Ok(None)
+            }
+        }
     }
 
     pub fn save(
