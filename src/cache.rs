@@ -76,3 +76,60 @@ impl CacheManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignore_nonexistent_cache() -> Result<(), AppError> {
+        let path: PathBuf = "/tmp/binchotan_fake_cache.json".into();
+        let cm = CacheManager::new(&path)?;
+        assert!(cm.load()?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn ignore_invalid_cache() -> Result<(), Box<dyn std::error::Error>> {
+        let path: PathBuf = "/tmp/binchotan_invalid_cache.json".into();
+        let mut f = File::create(&path)?;
+        f.write_all("{\"invalid_key\":\"foobar\"}\n".as_bytes())?;
+        f.flush()?;
+        let cm = CacheManager::new(&path)?;
+        assert!(cm.load()?.is_none());
+
+        std::fs::remove_file(&path)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn accept_valid_cache() -> Result<(), Box<dyn std::error::Error>> {
+        let path: PathBuf = "/tmp/binchotan_valid_cache.json".into();
+        let mut f = File::create(&path)?;
+        let content = r#"
+            {
+                "scopes": ["users.read", "tweet.read", "offline.access"],
+                "accounts": [
+                    "123456": {
+                        "access_token": "foo",
+                        "refresh_token": "bar"
+                    },
+                    "234567": {
+                        "access_token": "foo",
+                        "refresh_token": "bar"
+                    }
+                ]
+            }
+        "#;
+        f.write_all(content.as_bytes())?;
+        f.flush()?;
+        let cm = CacheManager::new(&path)?;
+        assert!(cm.load()?.is_none());
+
+        std::fs::remove_file(&path)?;
+
+        Ok(())
+    }
+}
