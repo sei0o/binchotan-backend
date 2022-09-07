@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
+use anyhow::{anyhow, Context};
 use reqwest::header::CONTENT_TYPE;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Response, StatusCode};
 use tracing::debug;
 
 use crate::error::AppError;
@@ -118,13 +119,13 @@ impl ApiClient {
         Ok(tweets)
     }
 
-    /// Calls an arbitrary endpoint with the method and the parameters given in the arguments. Path parameters such as `:id` are replace with those of the authenticating user.
+    /// Calls an arbitrary endpoint with the method and the parameters given in the arguments. Path parameters such as `:id` are replace with those of the authenticating user. Returns the response body, the remaining calls (`x-rate-limit-remaining`), and the end of the current rate-limiting time window in epoch seconds (`x-rate-limit-reset`), in this order.
     pub async fn call(
         &self,
         method: &HttpMethod,
         endpoint_path: &str,
         params: &HashMap<String, serde_json::Value>,
-    ) -> Result<serde_json::Value, AppError> {
+    ) -> Result<(serde_json::Value, usize, usize), AppError> {
         let path = endpoint_path.replace(":id", &self.user_id);
         let endpoint = format!("https://api.twitter.com/2/{}", path);
         let body = serde_json::to_string(params).map_err(AppError::RpcParamsParse)?;
@@ -137,6 +138,18 @@ impl ApiClient {
             .send()
             .await?;
         let status = resp.status();
+
+        fn get_header(resp: &Response, key: &str) -> Result<usize, anyhow::Error> {
+            let value = resp.headers().get(key).context("header not found")?;
+            let st = value.to_str().context("invalid header")?;
+            let num = st.parse::<usize>().context("invalid header")?;
+            Ok(num)
+        }
+
+        let remaining =
+            get_header(&resp, "x-rate-limit-remaining").map_err(AppError::ApiResponseHeader)?;
+        let reset = get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
+
         let json = resp.text().await?;
 
         match status {
@@ -144,7 +157,7 @@ impl ApiClient {
                 let val: serde_json::Value =
                     serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
                 debug!("{:?}", val);
-                Ok(val)
+                Ok((val, remaining, reset))
             }
             x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
         }

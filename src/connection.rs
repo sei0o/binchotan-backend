@@ -224,14 +224,14 @@ impl Handler {
                 api_params,
             } => {
                 let client = self.store.client_for(&user_id).await?;
-                let resp = client.call(&http_method, &endpoint, &api_params).await?;
+                let (resp, remaining, reset) =
+                    client.call(&http_method, &endpoint, &api_params).await?;
                 info!("got response for plain request with id {}", req.id);
 
                 let content = ResponseContent::Plain {
                     meta: ResponsePlainMeta {
-                        // TODO:
-                        api_calls_remaining: 0,
-                        api_calls_reset: 0,
+                        api_calls_remaining: remaining,
+                        api_calls_reset: reset,
                     },
                     body: resp,
                 };
@@ -244,6 +244,7 @@ impl Handler {
             _ => Err(AppError::RpcParamsMismatch(req)),
         }
     }
+
     async fn handle_timeline(&self, req: Request) -> Result<Response, AppError> {
         let (user_id, mut params) = match req.params {
             RequestParams::MapWithId {

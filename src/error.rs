@@ -15,6 +15,8 @@ pub enum AppError {
     ServerLaunch(String),
     #[error("could not parse the API response: {0}")]
     ApiResponseParse(serde_json::Error),
+    #[error("could not find the API header: {0}")]
+    ApiResponseHeader(anyhow::Error),
     #[error("field {0} was not found in the API response: {1:?}")]
     ApiResponseNotFound(String, serde_json::Value),
     #[error("could not convert the API response into JSON: {0}")]
