@@ -1,8 +1,5 @@
-use std::path::PathBuf;
-
+use crate::{connection::Request, filter::FilterError};
 use thiserror::Error;
-
-use crate::connection::Request;
 
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
@@ -43,12 +40,8 @@ pub enum AppError {
     RpcParamsParse(serde_json::Error),
     #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
     RpcParamsMismatch(Request),
-    #[error("the given path ({0}) is not a directory")]
-    FilterPathNotDir(PathBuf),
-    #[error("could not parse binchotan.toml")]
-    FilterMetaParse(toml::de::Error),
-    #[error("Filter `{0}` requires an additional API scopes (permissions): {}. Review the filter and add scopes in your config if you want to.", .1.join(","))]
-    FilterInsufficientScopes(String, Vec<String>),
+    #[error("filter error: {0}")]
+    Filter(#[from] FilterError),
     #[error("mlua error: {0}")]
     Lua(#[from] mlua::Error),
     #[error("other IO error: {0}")]

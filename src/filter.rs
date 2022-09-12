@@ -1,5 +1,11 @@
 use serde::Deserialize;
-use std::{collections::HashSet, fs::File, io::Read, path::Path};
+use std::{
+    collections::HashSet,
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+};
+use thiserror::Error;
 use tracing::error;
 
 use crate::{error::AppError, tweet::Tweet};
@@ -20,10 +26,25 @@ pub struct FilterMeta {
     scopes: HashSet<String>,
 }
 
+#[derive(Debug, Error)]
+pub enum FilterError {
+    #[error("the given path ({0}) is not a directory")]
+    PathNotDir(PathBuf),
+    #[error("could not parse binchotan.toml")]
+    MetaParse(toml::de::Error),
+    #[error("Filter `{0}` requires an additional API scopes (permissions): {}. Review the filter and add scopes in your config if you want to.", .1.join(","))]
+    InsufficientScopes(String, Vec<String>),
+    #[error("other IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 impl Filter {
-    pub fn load(dir: &Path, available_scopes: &HashSet<String>) -> Result<Vec<Filter>, AppError> {
+    pub fn load(
+        dir: &Path,
+        available_scopes: &HashSet<String>,
+    ) -> Result<Vec<Filter>, FilterError> {
         if !dir.is_dir() {
-            return Err(AppError::FilterPathNotDir(dir.to_owned()));
+            return Err(FilterError::PathNotDir(dir.to_owned()));
         }
 
         dir.read_dir()?
@@ -42,22 +63,22 @@ impl Filter {
             .collect()
     }
 
-    fn load_single(dir: &Path, available_scopes: &HashSet<String>) -> Result<Filter, AppError> {
+    fn load_single(dir: &Path, available_scopes: &HashSet<String>) -> Result<Filter, FilterError> {
         if !dir.is_dir() {
-            return Err(AppError::FilterPathNotDir(dir.to_owned()));
+            return Err(FilterError::PathNotDir(dir.to_owned()));
         }
 
         let meta_path = dir.join("binchotan.toml");
         let mut meta_buf = String::new();
         File::open(&meta_path)?.read_to_string(&mut meta_buf)?;
-        let meta: FilterMeta = toml::from_str(&meta_buf).map_err(AppError::FilterMetaParse)?;
+        let meta: FilterMeta = toml::from_str(&meta_buf).map_err(FilterError::MetaParse)?;
 
         let mut src = String::new();
         File::open(&dir.join(&meta.entrypoint))?.read_to_string(&mut src)?;
 
         let diff: Vec<String> = meta.scopes.difference(available_scopes).cloned().collect();
         if !diff.is_empty() {
-            return Err(AppError::FilterInsufficientScopes(meta.name, diff));
+            return Err(FilterError::InsufficientScopes(meta.name, diff));
         }
 
         Ok(Filter { src, meta })
