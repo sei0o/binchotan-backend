@@ -1,15 +1,14 @@
+use crate::{auth::Auth, config::Config, connection::Request};
+use anyhow::Context;
+use connection::Handler;
+use credential::CredentialStore;
+use error::AppError;
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::UnixListener,
     path::{Path, PathBuf},
 };
-
-use anyhow::Context;
-use connection::Handler;
-use credential::CredentialStore;
-use error::AppError;
-
-use crate::{auth::Auth, config::Config, connection::Request};
+use thiserror::Error;
 
 mod api;
 mod auth;
@@ -48,7 +47,7 @@ async fn start(config: Config) -> Result<(), AppError> {
     );
     let store = CredentialStore::new(config.cache_path.into(), auth)?;
 
-    let listener = Listener::new(&config.socket_path)?;
+    let mut listener = Listener::new(&config.socket_path)?;
 
     let sock_path = config.socket_path.clone();
     ctrlc::set_handler(move || {
@@ -60,33 +59,23 @@ async fn start(config: Config) -> Result<(), AppError> {
     // validate filters' scopes in advance
     filter::Filter::load(config.filter_dir.as_ref(), &config.scopes)?;
 
-    let mut handler = Handler {
+    let handler = Handler {
         store,
         filter_path: config.filter_dir.clone(),
         scopes: config.scopes.clone(),
     };
 
-    for stream in listener.socket.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let stream_ = stream.try_clone()?;
-                let mut reader = BufReader::new(stream_);
-                let mut payload = String::new();
-                reader.read_line(&mut payload)?;
-
-                let req: Request =
-                    serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
-                let resp = handler.handle(req).await;
-                let json = serde_json::to_string(&resp).map_err(AppError::SocketSerialize)?;
-
-                stream.write_all(json.as_bytes())?;
-                stream.flush()?;
-            }
-            Err(_) => continue,
-        }
-    }
+    listener.listen(handler).await?;
 
     Ok(())
+}
+
+#[derive(Debug, Error)]
+pub enum ListenerError {
+    #[error("could not bind to the socket. another backend might be running?")]
+    Bind(#[source] std::io::Error),
+    #[error("could not parse the socket payload")]
+    Parse(#[source] serde_json::Error),
 }
 
 struct Listener {
@@ -95,11 +84,36 @@ struct Listener {
 }
 
 impl Listener {
-    pub fn new<T: AsRef<Path>>(socket_path: T) -> Result<Self, AppError> {
+    pub fn new<T: AsRef<Path>>(socket_path: T) -> Result<Self, ListenerError> {
         Ok(Self {
-            socket: UnixListener::bind(socket_path.as_ref()).map_err(AppError::SocketBind)?,
+            socket: UnixListener::bind(socket_path.as_ref()).map_err(ListenerError::Bind)?,
             path: socket_path.as_ref().to_owned(),
         })
+    }
+
+    pub async fn listen(&mut self, mut handler: Handler) -> Result<(), AppError> {
+        for stream in self.socket.incoming() {
+            match stream {
+                Ok(mut stream) => {
+                    let stream_ = stream.try_clone()?;
+                    let mut reader = BufReader::new(stream_);
+                    let mut payload = String::new();
+                    reader.read_line(&mut payload)?;
+
+                    let req: Request =
+                        serde_json::from_str(&payload).map_err(ListenerError::Parse)?;
+                    let resp = handler.handle(req).await;
+                    // SAFETY: Response is serde::Serialize so it should always be able to be serialized
+                    let json = serde_json::to_string(&resp).unwrap();
+
+                    stream.write_all(json.as_bytes())?;
+                    stream.flush()?;
+                }
+                Err(_) => continue,
+            }
+        }
+
+        Ok(())
     }
 }
 

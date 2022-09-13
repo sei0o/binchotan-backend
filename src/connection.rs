@@ -149,9 +149,7 @@ impl From<AppError> for ResponseError {
     fn from(err: AppError) -> Self {
         let code = match err {
             AppError::Config(_) => unreachable!(),
-            AppError::SocketSerialize(_) => unreachable!(),
-            AppError::SocketBind(_) => unreachable!(),
-            AppError::SocketPayloadParse(_) => unreachable!(),
+            AppError::Listener(_) => unreachable!(),
             AppError::CacheManager(_) => RpcError::Server(RpcServerError::Other),
             AppError::CredentialStore(_) => RpcError::Server(RpcServerError::Other),
             AppError::Auth(_) => RpcError::Server(RpcServerError::Other),

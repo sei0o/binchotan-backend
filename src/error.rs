@@ -1,6 +1,6 @@
 use crate::{
     api::ApiClientError, auth::AuthError, cache::CacheManagerError, connection::HandlerError,
-    credential::CredentialStoreError, filter::FilterError,
+    credential::CredentialStoreError, filter::FilterError, ListenerError,
 };
 use thiserror::Error;
 
@@ -9,12 +9,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("could not load configuration: {0}")]
     Config(#[from] config::ConfigError),
-    #[error("could not convert the API response into JSON: {0}")]
-    SocketSerialize(serde_json::Error),
-    #[error("could not bind to the socket. another backend might be running? : {0}")]
-    SocketBind(std::io::Error),
-    #[error("could not parse the socket payload: {0}")]
-    SocketPayloadParse(serde_json::Error),
+    #[error("listener error")]
+    Listener(#[from] ListenerError),
     #[error("cache manager error")]
     CacheManager(#[from] CacheManagerError),
     #[error("cred store error")]
