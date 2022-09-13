@@ -37,6 +37,8 @@ pub enum FilterError {
     InsufficientScopes(String, Vec<String>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Lua(#[from] mlua::Error),
 }
 
 impl Filter {
@@ -86,7 +88,7 @@ impl Filter {
     }
 
     /// Applies the filter on the given post. The filter is a Lua script which returns a Tweet or null.
-    pub fn run(&self, tweet: &Tweet) -> Result<Option<Tweet>, AppError> {
+    pub fn run(&self, tweet: &Tweet) -> Result<Option<Tweet>, FilterError> {
         let lua = Lua::new();
         lua.globals().set("post", lua.to_value(tweet)?)?;
         let ret = lua.load(&self.src).eval()?;
