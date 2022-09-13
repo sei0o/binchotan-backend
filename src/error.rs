@@ -1,51 +1,36 @@
-use crate::{connection::Request, filter::FilterError};
+use crate::{
+    api::ApiClientError, auth::AuthError, cache::CacheManagerError, connection::HandlerError,
+    credential::CredentialStoreError, filter::FilterError,
+};
 use thiserror::Error;
 
 /// AppError represents errors caused in this application.
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("could not parse the cache file: {0}")]
-    CacheParse(serde_json::Error),
     #[error("could not load configuration: {0}")]
     Config(#[from] config::ConfigError),
-    #[error("could not start the redirect server. The port might be already occupied: {0}")]
-    ServerLaunch(String),
-    #[error("could not parse the API response: {0}")]
-    ApiResponseParse(serde_json::Error),
-    #[error("could not find the API header: {0}")]
-    ApiResponseHeader(anyhow::Error),
-    #[error("field {0} was not found in the API response: {1:?}")]
-    ApiResponseNotFound(String, serde_json::Value),
     #[error("could not convert the API response into JSON: {0}")]
-    ApiResponseSerialize(serde_json::Error),
-    #[error("failed to request the API: {0}")]
-    ApiRequest(#[from] reqwest::Error),
-    #[error("the API has given a non-successful status code ({0}): {1}")]
-    ApiResponseStatus(u16, String),
-    #[error("OAuth2 error: {0:?}")]
-    OAuth(anyhow::Error),
-    #[error("could not parse the URL: {0}")]
-    OAuthUrlParse(#[from] url::ParseError),
+    SocketSerialize(serde_json::Error),
     #[error("could not bind to the socket. another backend might be running? : {0}")]
     SocketBind(std::io::Error),
     #[error("could not parse the socket payload: {0}")]
     SocketPayloadParse(serde_json::Error),
-    #[error("incompatible JSON-RPC version: {0}. use 2.0 instead")]
-    RpcVersion(String),
-    #[error("unregistered user id: {0}")]
-    RpcUnknownAccount(String),
-    #[error("token for user id {0:?} has expired")]
-    TokenExpired(Option<String>),
-    #[error("could not parse the parameters in the JSON-RPC request: {0}")]
-    RpcParamsParse(serde_json::Error),
-    #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
-    RpcParamsMismatch(Request),
+    #[error("cache manager error")]
+    CacheManager(#[from] CacheManagerError),
+    #[error("cred store error")]
+    CredentialStore(#[from] CredentialStoreError),
+    #[error("auth error")]
+    Auth(#[from] AuthError),
+    #[error("api client error")]
+    ApiClient(#[from] ApiClientError),
+    #[error("handler error")]
+    Handler(#[from] HandlerError),
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),
     #[error("mlua error: {0}")]
     Lua(#[from] mlua::Error),
     #[error("other IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("{0}")]
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

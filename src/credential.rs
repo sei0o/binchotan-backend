@@ -1,17 +1,22 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf};
 
+use thiserror::Error;
 use tracing::info;
 
 use crate::{
     api::ApiClient,
     auth::Auth,
-    cache::{Cache, CacheManager, Credential, CredentialState},
+    cache::{Cache, CacheManager, CacheManagerError, Credential, CredentialState},
     error::AppError,
 };
+
+#[derive(Debug, Error)]
+pub enum CredentialStoreError {
+    #[error("unknown account: {0}")]
+    UnknownAccount(String),
+    #[error(transparent)]
+    CacheManager(#[from] CacheManagerError),
+}
 
 pub struct CredentialStore {
     cm: CacheManager,
@@ -20,8 +25,8 @@ pub struct CredentialStore {
 }
 
 impl CredentialStore {
-    pub fn new(cache_path: PathBuf, auth: Auth) -> Result<Self, AppError> {
-        let cm = CacheManager::new(cache_path)?;
+    pub fn new(cache_path: PathBuf, auth: Auth) -> Result<Self, CredentialStoreError> {
+        let cm = CacheManager::new(cache_path);
         let Cache { accounts, scopes } = cm.load()?.unwrap_or_default();
 
         let credentials = if scopes == auth.scopes {
@@ -37,8 +42,8 @@ impl CredentialStore {
         })
     }
 
-    pub fn user_ids(&self) -> Result<Vec<String>, AppError> {
-        Ok(self.credentials.borrow_mut().keys().cloned().collect())
+    pub fn user_ids(&self) -> Vec<String> {
+        self.credentials.borrow_mut().keys().cloned().collect()
     }
 
     pub async fn client_for(&self, user_id: &str) -> Result<ApiClient, AppError> {
@@ -78,15 +83,16 @@ impl CredentialStore {
                             }
                             self.save()?;
                             info!("successfully refreshed tokens");
-                            return ApiClient::new(acc).await;
+                            let client = ApiClient::new(acc).await?;
+                            return Ok(client);
                         }
-                        Err(e) => return Err(e),
+                        Err(e) => return Err(e.into()),
                     };
                 }
 
                 unreachable!();
             }
-            None => Err(AppError::RpcUnknownAccount(user_id.into())),
+            None => Err(CredentialStoreError::UnknownAccount(user_id.into()).into()),
         }
     }
 

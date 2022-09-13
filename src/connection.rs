@@ -1,12 +1,13 @@
 use crate::{
     api::HomeTimelineResponseBody, credential::CredentialStore, error::AppError, filter::Filter,
-    methods::HttpMethod, tweet::Tweet, VERSION,
+    methods::HttpMethod, VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
 };
+use thiserror::Error;
 use tracing::{info, warn};
 
 pub const JSONRPC_VERSION: &str = "2.0";
@@ -18,15 +19,6 @@ pub struct Request {
     #[serde(default)]
     pub params: RequestParams,
     pub id: String,
-}
-
-impl Request {
-    pub fn validate(&self) -> Result<(), AppError> {
-        match self.jsonrpc.as_str() {
-            JSONRPC_VERSION => Ok(()),
-            v => Err(AppError::RpcVersion(v.to_owned())),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,26 +140,28 @@ impl From<RpcServerError> for isize {
     }
 }
 
+// TODO: include concrete error types (CacheManager, ApiClient etc.) under HandlerErrors, and use HandlerErrors instead to get rid of unreachables?
 impl From<AppError> for ResponseError {
     fn from(err: AppError) -> Self {
         let code = match err {
-            AppError::Io(_) => RpcError::Server(RpcServerError::Other),
-            AppError::ApiResponseParse(_) => RpcError::Server(RpcServerError::Api),
-            AppError::ApiResponseNotFound(_, _) => RpcError::Server(RpcServerError::Api),
-            AppError::ApiResponseSerialize(_) => RpcError::Server(RpcServerError::Api),
-            AppError::ApiRequest(_) => RpcError::Server(RpcServerError::Api),
-            AppError::ApiResponseStatus(_, _) => RpcError::Server(RpcServerError::ApiStatus),
-            AppError::TokenExpired(_) => RpcError::Server(RpcServerError::Api),
-            AppError::OAuth(_) => RpcError::Server(RpcServerError::Api),
-            AppError::OAuthUrlParse(_) => RpcError::Server(RpcServerError::Api),
-            AppError::SocketPayloadParse(_) => RpcError::Parse,
-            AppError::RpcVersion(_) => RpcError::InvalidRequest,
-            AppError::RpcParamsParse(_) => RpcError::Parse,
-            AppError::RpcParamsMismatch(_) => RpcError::InvalidParams,
+            AppError::Config(_) => unreachable!(),
+            AppError::SocketSerialize(_) => unreachable!(),
+            AppError::SocketBind(_) => todo!(),
+            AppError::SocketPayloadParse(_) => unreachable!(),
+            AppError::CacheManager(_) => RpcError::Server(RpcServerError::Other),
+            AppError::CredentialStore(_) => RpcError::Server(RpcServerError::Other),
+            AppError::Auth(_) => RpcError::Server(RpcServerError::Other),
+            AppError::ApiClient(_) => RpcError::Server(RpcServerError::Other),
+            AppError::Handler(ref e) => match e {
+                HandlerError::RpcParamsParse(_) => RpcError::Parse,
+                HandlerError::RpcVersion => RpcError::InvalidRequest,
+                HandlerError::RpcUnknownAccount(_) => RpcError::InvalidParams,
+                HandlerError::RpcParamsMismatch(_) => RpcError::InvalidParams,
+            },
+            AppError::Filter(_) => RpcError::Server(RpcServerError::Other),
             AppError::Lua(_) => RpcError::Server(RpcServerError::Lua),
+            AppError::Io(_) => RpcError::Server(RpcServerError::Other),
             AppError::Other(_) => RpcError::Server(RpcServerError::Other),
-            // errors which should be thrown during initialization
-            _ => unreachable!(),
         }
         .into();
 
@@ -177,6 +171,18 @@ impl From<AppError> for ResponseError {
             data: None,
         }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum HandlerError {
+    #[error("could not parse the parameters in the JSON-RPC request: {0}")]
+    RpcParamsParse(serde_json::Error),
+    #[error("incompatible JSON-RPC version. use 2.0 instead")]
+    RpcVersion,
+    #[error("unregistered user id: {0}")]
+    RpcUnknownAccount(String),
+    #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
+    RpcParamsMismatch(Request),
 }
 
 pub struct Handler {
@@ -204,15 +210,20 @@ impl Handler {
 
     async fn handle_inner(&mut self, req: Request) -> Result<Response, AppError> {
         info!("received a request: {:?}", req);
-        req.validate()?;
 
-        match req.method {
-            Method::Plain => self.handle_plain(req).await,
-            Method::HomeTimeline => self.handle_timeline(req).await,
-            Method::Status => self.handle_status(req).await,
-            Method::AccountList => self.handle_account_list(req).await,
-            Method::AccountAdd => self.handle_account_add(req).await,
+        if req.jsonrpc.as_str() != JSONRPC_VERSION {
+            return Err(HandlerError::RpcVersion.into());
         }
+
+        let resp = match req.method {
+            Method::Plain => self.handle_plain(req).await?,
+            Method::HomeTimeline => self.handle_timeline(req).await?,
+            Method::Status => self.handle_status(req).await?,
+            Method::AccountList => self.handle_account_list(req).await?,
+            Method::AccountAdd => self.handle_account_add(req).await?,
+        };
+
+        Ok(resp)
     }
 
     async fn handle_plain(&self, req: Request) -> Result<Response, AppError> {
@@ -224,8 +235,10 @@ impl Handler {
                 api_params,
             } => {
                 let client = self.store.client_for(&user_id).await?;
+                let api_params =
+                    serde_json::to_string(&api_params).map_err(HandlerError::RpcParamsParse)?;
                 let (resp, remaining, reset) =
-                    client.call(&http_method, &endpoint, &api_params).await?;
+                    client.call(&http_method, &endpoint, api_params).await?;
                 info!("got response for plain request with id {}", req.id);
 
                 let content = ResponseContent::Plain {
@@ -241,7 +254,7 @@ impl Handler {
                     id: req.id,
                 })
             }
-            _ => Err(AppError::RpcParamsMismatch(req)),
+            _ => Err(HandlerError::RpcParamsMismatch(req).into()),
         }
     }
 
@@ -251,7 +264,7 @@ impl Handler {
                 user_id,
                 api_params,
             } => (user_id, api_params),
-            _ => return Err(AppError::RpcParamsMismatch(req)),
+            _ => return Err(HandlerError::RpcParamsMismatch(req).into()),
         };
         let client = self.store.client_for(&user_id).await?;
         let (
@@ -300,12 +313,12 @@ impl Handler {
         })
     }
 
-    async fn handle_status(&self, req: Request) -> Result<Response, AppError> {
+    async fn handle_status(&self, req: Request) -> Result<Response, HandlerError> {
         let req_ = req.clone();
         match req.params {
             RequestParams::Map(prms) => {
                 if !prms.is_empty() {
-                    return Err(AppError::RpcParamsMismatch(req_));
+                    return Err(HandlerError::RpcParamsMismatch(req_));
                 }
 
                 let content = ResponseContent::Status {
@@ -318,7 +331,7 @@ impl Handler {
                     id: req.id,
                 })
             }
-            _ => Err(AppError::RpcParamsMismatch(req)),
+            _ => Err(HandlerError::RpcParamsMismatch(req)),
         }
     }
 
@@ -327,11 +340,11 @@ impl Handler {
         match req.params {
             RequestParams::Map(prms) => {
                 if !prms.is_empty() {
-                    return Err(AppError::RpcParamsMismatch(req_));
+                    return Err(HandlerError::RpcParamsMismatch(req_).into());
                 }
 
                 let content = ResponseContent::AccountList {
-                    user_ids: self.store.user_ids()?,
+                    user_ids: self.store.user_ids(),
                 };
 
                 Ok(Response {
@@ -340,7 +353,7 @@ impl Handler {
                     id: req.id,
                 })
             }
-            _ => Err(AppError::RpcParamsMismatch(req)),
+            _ => Err(HandlerError::RpcParamsMismatch(req).into()),
         }
     }
 
@@ -349,7 +362,7 @@ impl Handler {
         match req.params {
             RequestParams::Map(prms) => {
                 if !prms.is_empty() {
-                    return Err(AppError::RpcParamsMismatch(req_));
+                    return Err(HandlerError::RpcParamsMismatch(req_).into());
                 }
 
                 let user_id = self.store.auth().await?;
@@ -361,7 +374,7 @@ impl Handler {
                     id: req.id,
                 })
             }
-            _ => Err(AppError::RpcParamsMismatch(req)),
+            _ => Err(HandlerError::RpcParamsMismatch(req).into()),
         }
     }
 }

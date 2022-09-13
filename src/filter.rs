@@ -26,6 +26,7 @@ pub struct FilterMeta {
     scopes: HashSet<String>,
 }
 
+// TODO: use struct?
 #[derive(Debug, Error)]
 pub enum FilterError {
     #[error("the given path ({0}) is not a directory")]
@@ -34,7 +35,7 @@ pub enum FilterError {
     MetaParse(toml::de::Error),
     #[error("Filter `{0}` requires an additional API scopes (permissions): {}. Review the filter and add scopes in your config if you want to.", .1.join(","))]
     InsufficientScopes(String, Vec<String>),
-    #[error("other IO error: {0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
 }
 

@@ -1,14 +1,12 @@
-use std::collections::HashMap;
-
-use anyhow::Context;
+use crate::methods::HttpMethod;
+use crate::tweet::Tweet;
+use anyhow::anyhow;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use thiserror::Error;
 use tracing::debug;
-
-use crate::error::AppError;
-use crate::methods::HttpMethod;
-use crate::tweet::Tweet;
 
 // TODO: use a crate dedicated for the twitter api?
 
@@ -19,6 +17,22 @@ pub struct HomeTimelineResponseBody {
     pub meta: serde_json::Value,
 }
 
+#[derive(Debug, Error)]
+pub enum ApiClientError {
+    #[error("token for user id {0:?} has expired")]
+    TokenExpired(Option<String>),
+    #[error("could not find the API header: {0}")]
+    RespHeader(anyhow::Error),
+    #[error("could not parse the API response: {0}")]
+    RespParse(serde_json::Error),
+    #[error("field {0} was not found in the API response: {1:?}")]
+    RespParamNotFound(String, serde_json::Value),
+    #[error("the API has given a non-successful status code ({0}): {1}")]
+    RespStatus(u16, String),
+    #[error(transparent)]
+    Http(#[from] reqwest::Error),
+}
+
 pub struct ApiClient {
     client: Client,
     pub user_id: String,
@@ -26,7 +40,7 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub async fn new(access_token: String) -> Result<Self, AppError> {
+    pub async fn new(access_token: String) -> Result<Self, ApiClientError> {
         let client = Client::new();
         let user_id = Self::id_for_token(&client, &access_token).await?;
 
@@ -37,16 +51,16 @@ impl ApiClient {
         })
     }
 
-    pub async fn validate_token(access_token: &str) -> Result<bool, AppError> {
+    pub async fn validate_token(access_token: &str) -> Result<bool, ApiClientError> {
         let client = Client::new();
         match Self::id_for_token(&client, access_token).await {
             Ok(_id) => Ok(true),
-            Err(AppError::TokenExpired(_)) => Ok(false),
+            Err(ApiClientError::TokenExpired(_)) => Ok(false),
             Err(other) => Err(other),
         }
     }
 
-    async fn id_for_token(client: &Client, access_token: &str) -> Result<String, AppError> {
+    async fn id_for_token(client: &Client, access_token: &str) -> Result<String, ApiClientError> {
         let endpoint = "https://api.twitter.com/2/users/me";
         let resp = client
             .get(endpoint)
@@ -57,16 +71,16 @@ impl ApiClient {
         let json = resp.text().await?;
         match status {
             x if x.is_success() => {}
-            StatusCode::UNAUTHORIZED => return Err(AppError::TokenExpired(None)),
-            other => return Err(AppError::ApiResponseStatus(other.as_u16(), json)),
+            StatusCode::UNAUTHORIZED => return Err(ApiClientError::TokenExpired(None)),
+            other => return Err(ApiClientError::RespStatus(other.as_u16(), json)),
         }
 
         let user_data: serde_json::Value =
-            serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+            serde_json::from_str(&json).map_err(ApiClientError::RespParse)?;
         let id = user_data["data"]["id"]
             .as_str()
             .map(String::from)
-            .ok_or_else(|| AppError::ApiResponseNotFound("id".to_owned(), user_data))?;
+            .ok_or_else(|| ApiClientError::RespParamNotFound("id".into(), user_data))?;
         Ok(id)
     }
 
@@ -74,7 +88,7 @@ impl ApiClient {
     pub async fn timeline(
         &self,
         params: &mut HashMap<String, serde_json::Value>,
-    ) -> Result<(HomeTimelineResponseBody, usize, usize), AppError> {
+    ) -> Result<(HomeTimelineResponseBody, usize, usize), ApiClientError> {
         let endpoint = format!(
             "https://api.twitter.com/2/users/{}/timelines/reverse_chronological",
             self.user_id
@@ -117,22 +131,22 @@ impl ApiClient {
             .await?;
 
         let remaining = Self::get_header(&resp, "x-rate-limit-remaining")
-            .map_err(AppError::ApiResponseHeader)?;
+            .map_err(ApiClientError::RespHeader)?;
         let reset =
-            Self::get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
+            Self::get_header(&resp, "x-rate-limit-reset").map_err(ApiClientError::RespHeader)?;
 
         let status = resp.status();
         let json = resp.text().await?;
         match status {
             x if x.is_success() => {
                 let content: serde_json::Value =
-                    serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+                    serde_json::from_str(&json).map_err(ApiClientError::RespParse)?;
                 debug!("{:?}", content);
                 let body: HomeTimelineResponseBody =
-                    serde_json::value::from_value(content).map_err(AppError::ApiResponseParse)?;
+                    serde_json::value::from_value(content).map_err(ApiClientError::RespParse)?;
                 Ok((body, remaining, reset))
             }
-            x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
+            x => Err(ApiClientError::RespStatus(x.as_u16(), json)),
         }
     }
 
@@ -141,11 +155,10 @@ impl ApiClient {
         &self,
         method: &HttpMethod,
         endpoint_path: &str,
-        params: &HashMap<String, serde_json::Value>,
-    ) -> Result<(serde_json::Value, usize, usize), AppError> {
+        body: String,
+    ) -> Result<(serde_json::Value, usize, usize), ApiClientError> {
         let path = endpoint_path.replace(":id", &self.user_id);
         let endpoint = format!("https://api.twitter.com/2/{}", path);
-        let body = serde_json::to_string(params).map_err(AppError::RpcParamsParse)?;
         let resp = self
             .client
             .request(reqwest::Method::from(*method), endpoint)
@@ -157,26 +170,26 @@ impl ApiClient {
         let status = resp.status();
 
         let remaining = Self::get_header(&resp, "x-rate-limit-remaining")
-            .map_err(AppError::ApiResponseHeader)?;
+            .map_err(ApiClientError::RespHeader)?;
         let reset =
-            Self::get_header(&resp, "x-rate-limit-reset").map_err(AppError::ApiResponseHeader)?;
+            Self::get_header(&resp, "x-rate-limit-reset").map_err(ApiClientError::RespHeader)?;
         let json = resp.text().await?;
 
         match status {
             x if x.is_success() => {
                 let val: serde_json::Value =
-                    serde_json::from_str(&json).map_err(AppError::ApiResponseParse)?;
+                    serde_json::from_str(&json).map_err(ApiClientError::RespParse)?;
                 debug!("{:?}", val);
                 Ok((val, remaining, reset))
             }
-            x => Err(AppError::ApiResponseStatus(x.as_u16(), json)),
+            x => Err(ApiClientError::RespStatus(x.as_u16(), json)),
         }
     }
 
     fn get_header(resp: &Response, key: &str) -> Result<usize, anyhow::Error> {
-        let value = resp.headers().get(key).context("header not found")?;
-        let st = value.to_str().context("invalid header")?;
-        let num = st.parse::<usize>().context("invalid header")?;
+        let value = resp.headers().get(key).ok_or(anyhow!("no header"))?;
+        let st = value.to_str()?;
+        let num = st.parse::<usize>()?;
         Ok(num)
     }
 }

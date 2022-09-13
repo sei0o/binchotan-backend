@@ -77,7 +77,7 @@ async fn start(config: Config) -> Result<(), AppError> {
                 let req: Request =
                     serde_json::from_str(&payload).map_err(AppError::SocketPayloadParse)?;
                 let resp = handler.handle(req).await;
-                let json = serde_json::to_string(&resp).map_err(AppError::ApiResponseSerialize)?;
+                let json = serde_json::to_string(&resp).map_err(AppError::SocketSerialize)?;
 
                 stream.write_all(json.as_bytes())?;
                 stream.flush()?;
