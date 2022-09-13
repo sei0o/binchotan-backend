@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn ignore_nonexistent_cache() -> Result<(), Box<dyn std::error::Error>> {
         let path: PathBuf = "/tmp/binchotan_fake_cache.json".into();
-        let cm = CacheManager::new(&path)?;
+        let cm = CacheManager::new(&path);
         assert!(cm.load()?.is_none());
 
         Ok(())
@@ -102,7 +102,7 @@ mod tests {
         let mut f = File::create(&path)?;
         f.write_all("{\"invalid_key\":\"foobar\"}\n".as_bytes())?;
         f.flush()?;
-        let cm = CacheManager::new(&path)?;
+        let cm = CacheManager::new(&path);
         assert!(cm.load()?.is_none());
 
         std::fs::remove_file(&path)?;
@@ -131,7 +131,7 @@ mod tests {
         "#;
         f.write_all(content.as_bytes())?;
         f.flush()?;
-        let cm = CacheManager::new(&path)?;
+        let cm = CacheManager::new(&path);
         assert!(cm.load()?.is_none());
 
         std::fs::remove_file(&path)?;
