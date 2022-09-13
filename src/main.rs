@@ -5,10 +5,11 @@ use credential::CredentialStore;
 use error::AppError;
 use std::{
     io::{BufRead, BufReader, Write},
-    os::unix::net::UnixListener,
+    os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
+use tracing::error;
 
 mod api;
 mod auth;
@@ -92,26 +93,28 @@ impl Listener {
     }
 
     pub async fn listen(&mut self, mut handler: Handler) -> Result<(), AppError> {
-        for stream in self.socket.incoming() {
-            match stream {
-                Ok(mut stream) => {
-                    let stream_ = stream.try_clone()?;
-                    let mut reader = BufReader::new(stream_);
-                    let mut payload = String::new();
-                    reader.read_line(&mut payload)?;
-
-                    let req: Request =
-                        serde_json::from_str(&payload).map_err(ListenerError::Parse)?;
-                    let resp = handler.handle(req).await;
-                    // SAFETY: Response is serde::Serialize so it should always be able to be serialized
-                    let json = serde_json::to_string(&resp).unwrap();
-
-                    stream.write_all(json.as_bytes())?;
-                    stream.flush()?;
-                }
-                Err(_) => continue,
+        for stream in self.socket.incoming().flatten() {
+            if let Err(err) = Self::handle_stream(&mut handler, stream).await {
+                error!("{}", err);
             }
         }
+
+        Ok(())
+    }
+
+    async fn handle_stream(handler: &mut Handler, mut stream: UnixStream) -> Result<(), AppError> {
+        let stream_ = stream.try_clone()?;
+        let mut reader = BufReader::new(stream_);
+        let mut payload = String::new();
+        reader.read_line(&mut payload)?;
+
+        let req: Request = serde_json::from_str(&payload).map_err(ListenerError::Parse)?;
+        let resp = handler.handle(req).await;
+        // SAFETY: Response is serde::Serialize so it should always be able to be serialized
+        let json = serde_json::to_string(&resp).unwrap();
+
+        stream.write_all(json.as_bytes())?;
+        stream.flush()?;
 
         Ok(())
     }
