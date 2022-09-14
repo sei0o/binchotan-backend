@@ -13,7 +13,7 @@ targeted OSes: *nix (but tested only Linux)
 ### Usage
 
 1. Clone this repository
-2. Set the environment variable `TWITTER_CLIENT_ID` and `TWITTER_CLIENT_SECRET` to your OAuth2 (not 1.0a) credentials, or use `.env`.
+2. Set the environment variable `BINCHOTAN_TWITTER_CLIENT_ID` and `BINCHOTAN_TWITTER_CLIENT_SECRET` to your OAuth2 (not 1.0a) credentials, or use `.env`.
 3. `cargo run`
 4. Use the mock frontend to see it works.
 
@@ -26,7 +26,7 @@ targeted OSes: *nix (but tested only Linux)
 4. Modify `~/.local/share/systemd/user/binchotan.service`
   * Open `~/.local/share/systemd/user/binchotan.service` in an editor.
   * Modify `ExecStart` option
-  * Paste `TWITTER_CLIENT_ID` and `TWITTER_CLIENT_SECRET` from Twitter Developer Portal to `Environment` option
+  * Paste `BINCHOTAN_TWITTER_CLIENT_ID` and `BINCHOTAN_TWITTER_CLIENT_SECRET` from Twitter Developer Portal to `Environment` option
   * Modify `Environment`'s  other variable properly.
 5. `systemctl daemon-reload`
 6. `systemctl --user start binchotan`

@@ -14,7 +14,7 @@
 
 1. リポジトリのクローン: `git clone https://github.com/sei0o/binchotan-backend.git && cd binchotan-backend`
 2. 環境変数の設定
-   * 環境変数`TWITTER_CLIENT_ID` と `TWITTER_CLIENT_SECRET` を Twitter Developer Portal からペーストする
+   * 環境変数 `BINCHOTAN_TWITTER_CLIENT_ID` と `BINCHOTAN_TWITTER_CLIENT_SECRET` を Twitter Developer Portal からペーストする
      * OAuth1.0a ではなく、OAuth2 の Client ID と Client Secret を用いる
    * または、`.env`ファイルを作成し、ペースト: `cp .env.template .env`
 3. 実行: `cargo run`
@@ -29,7 +29,7 @@
 4. `~/.local/share/systemd/user/binchotan.service`の修正
   * `~/.local/share/systemd/user/binchotan.service`をエディタで開く
   * `.service`ファイルの`ExecStart`にあるバイナリの絶対パスと、配置したバイナリの絶対パスが一致しているか確認する。していなければ修正する。
-  * `.service`ファイルの`Environment`にある`TWITTER_CLIENT_ID`と`TWITTER_CLIENT_SECRET`をペーストする
+  * `.service`ファイルの`Environment`にある`BINCHOTAN_TWITTER_CLIENT_ID`と`BINCHOTAN_TWITTER_CLIENT_SECRET`にペーストする
   * その他`Environment`も適宜修正する
 5. `systemctl daemon-reload`
 6. `systemctl --user start binchotan`
