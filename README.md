@@ -50,3 +50,11 @@ Please use [binchotan-frontend-sample](https://github.com/sei0o/binchotan-fronte
 
 * [binchotan-frontend-sample](https://github.com/sei0o/binchotan-frontend-sample): frontend for manage accounts. CLI app.
 * [minichotan](https://github.com/sei0o/minichotan): minimal ui, handles multiple accounts. desktop client.
+
+## Contributing
+
+* Fork it (https://gitlab.com/sei0o/binchotan-backend/fork)
+* Create your feature branch (`git checkout -b my-new-feature`)
+* Commit your changes (`git commit -am 'Add some feature'`)
+* Push to the branch (`git push origin my-new-feature`)
+* Create a new Pull Request
