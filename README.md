@@ -1,5 +1,7 @@
 # binchotan
 
+[日本語](https://github.com/eniehack/binchotan-backend/blob/main/README.ja.md)
+
 ## Install
 
 targeted OSes: *nix (but tested only Linux)
