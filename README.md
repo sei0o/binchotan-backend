@@ -1,10 +1,8 @@
 # binchotan
 
-十分な表現力を持つフィルタ機構を備えた Twitter クライアント
-
 ## Install
 
-targeted OSes: *nix (but tested Linux only)
+targeted OSes: *nix (but tested only Linux)
 
 ### Requirements
 
@@ -51,4 +49,4 @@ Please use [binchotan-frontend-sample](https://github.com/sei0o/binchotan-fronte
 ## Frontends
 
 * [binchotan-frontend-sample](https://github.com/sei0o/binchotan-frontend-sample): frontend for manage accounts. CLI app.
-* [minichotan](https://github.com/sei0o/minichotan): minimal ui, handles multiple accounts
+* [minichotan](https://github.com/sei0o/minichotan): minimal ui, handles multiple accounts. desktop client.
