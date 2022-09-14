@@ -1,6 +1,6 @@
 # binchotan
 
-[日本語](https://github.com/eniehack/binchotan-backend/blob/main/README.ja.md)
+[日本語](https://github.com/sei0o/binchotan-backend/blob/main/README.ja.md)
 
 ## Install
 
