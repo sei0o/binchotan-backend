@@ -29,9 +29,9 @@ targeted OSes: *nix (but tested only Linux)
 5. `systemctl daemon-reload`
 6. `systemctl --user start binchotan`
 
-## 設定
+## Configuration
 
-### environment variables
+### Environment variables
 
 describe below options in `.env`file or envitonment variables.
 
