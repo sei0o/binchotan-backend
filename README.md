@@ -31,6 +31,10 @@ targeted OSes: *nix (but tested only Linux)
 5. `systemctl daemon-reload`
 6. `systemctl --user start binchotan`
 
+### ArchLinux
+
+You can install from the [AUR](https://aur.archlinux.org/packages/binchotan-backend-git).
+
 ## Configuration
 
 ### Environment variables
