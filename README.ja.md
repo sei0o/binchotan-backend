@@ -34,6 +34,10 @@
 5. `systemctl daemon-reload`
 6. `systemctl --user start binchotan`
 
+### ArchLinux
+
+[AUR](https://aur.archlinux.org/packages/binchotan-backend-git)から入手できます。
+
 ## 設定
 
 ### 環境変数
