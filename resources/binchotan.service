@@ -5,8 +5,13 @@ After=network-online.target
 
 [Service]
 Type=simple
-Environment="BINCHOTAN_CONFIG_FILE=/etc/binchotan/config.toml" "BINCHOTAN_TWITTER_CLIENT_ID=" "BINCHOTAN_TWITTER_CLIENT_SECRET=" "BINCHOTAN_SOCKET_PATH=/tmp/binchotan" "BINCHOTAN_CACHE_PATH=binchotan_cache.json" "BINCHOTAN_FILTER_DIR=./example_filters"
-ExecStart=/usr/local/bin/binchotan-backend
+Environment=BINCHOTAN_CONFIG_FILE=%E/binchotan/config.toml
+Environment=BINCHOTAN_TWITTER_CLIENT_ID=
+Environment=BINCHOTAN_TWITTER_CLIENT_SECRET=
+Environment=BINCHOTAN_SOCKET_PATH=%t/binchotan.socket
+Environment=BINCHOTAN_CACHE_PATH=%C/binchotan/cache.json
+Environment=BINCHOTAN_FILTER_DIR=%E/binchotan/filter/
+ExecStart=/usr/bin/binchotan-backend
 ExecStop=/bin/kill -TERM $MAINPID
 
 [Install]
