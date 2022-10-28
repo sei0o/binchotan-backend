@@ -19,7 +19,7 @@ pub enum CredentialStoreError {
     UnknownAccount(String),
     #[error(transparent)]
     CacheManager(#[from] CacheManagerError),
-    #[error(transparent)]
+    #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 }
 
@@ -133,19 +133,20 @@ impl CredentialStore {
         unreachable!();
     }
 
-    pub async fn auth(&mut self) -> Result<String, AppError> {
+    pub async fn auth(&mut self) -> Result<(String, String), AppError> {
         let (acc, refr) = self.auth.generate_tokens().await?;
-        let user_id = self.add_credential(acc, refr).await?;
+        let (user_id, session_key) = self.add_credential(acc, refr).await?;
 
-        Ok(user_id)
+        Ok((user_id, session_key))
     }
 
     pub async fn add_credential(
         &mut self,
         access_token: String,
         refresh_token: String,
-    ) -> Result<String, AppError> {
+    ) -> Result<(String, String), AppError> {
         let client = ApiClient::new(access_token.clone()).await?;
+        let session_key = Uuid::new_v4().to_string();
 
         sqlx::query!(
             r#"
@@ -158,12 +159,12 @@ impl CredentialStore {
             client.user_id,
             access_token,
             refresh_token,
-            Uuid::new_v4().to_string()
+            session_key
         )
-        .fetch_one(&self.conn)
+        .execute(&self.conn)
         .await
         .map_err(CredentialStoreError::Database)?;
 
-        Ok(client.user_id)
+        Ok((client.user_id, session_key))
     }
 }

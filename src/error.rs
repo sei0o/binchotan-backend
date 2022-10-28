@@ -13,7 +13,7 @@ pub enum AppError {
     Listener(#[from] ListenerError),
     #[error("cache manager error")]
     CacheManager(#[from] CacheManagerError),
-    #[error("cred store error")]
+    #[error("cred store error: {0}")]
     CredentialStore(#[from] CredentialStoreError),
     #[error("auth error")]
     Auth(#[from] AuthError),

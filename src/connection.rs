@@ -86,7 +86,10 @@ pub enum ResponseContent {
     #[serde(rename = "result")]
     AccountList { user_ids: Vec<String> },
     #[serde(rename = "result")]
-    AccountAdd { user_id: String },
+    AccountAdd {
+        user_id: String,
+        session_key: String,
+    },
     #[serde(rename = "error")]
     Error(ResponseError),
 }
@@ -373,8 +376,11 @@ impl Handler {
                     return Err(HandlerError::ParamsMismatch(req_).into());
                 }
 
-                let user_id = self.store.auth().await?;
-                let content = ResponseContent::AccountAdd { user_id };
+                let (user_id, session_key) = self.store.auth().await?;
+                let content = ResponseContent::AccountAdd {
+                    user_id,
+                    session_key,
+                };
 
                 Ok(Response {
                     jsonrpc: JSONRPC_VERSION.to_string(),
