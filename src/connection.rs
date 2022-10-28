@@ -352,7 +352,7 @@ impl Handler {
                 }
 
                 let content = ResponseContent::AccountList {
-                    user_ids: self.store.user_ids(),
+                    user_ids: self.store.user_ids().await?,
                 };
 
                 Ok(Response {

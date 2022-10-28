@@ -13,6 +13,7 @@ pub struct Config {
     pub cache_path: String,
     pub filter_dir: PathBuf,
     pub scopes: HashSet<String>,
+    pub database_url: String,
 }
 
 impl Config {

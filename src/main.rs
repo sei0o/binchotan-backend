@@ -3,6 +3,7 @@ use anyhow::Context;
 use connection::Handler;
 use credential::CredentialStore;
 use error::AppError;
+use sqlx::postgres::PgPoolOptions;
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::{UnixListener, UnixStream},
@@ -20,6 +21,7 @@ mod credential;
 mod error;
 mod filter;
 mod methods;
+mod models;
 mod tweet;
 
 const VERSION: &str = "0.1.0";
@@ -46,7 +48,12 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.redirect_host,
         config.scopes.clone(),
     );
-    let store = CredentialStore::new(config.cache_path.into(), auth)?;
+    let conn = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&config.database_url)
+        .await
+        .context("could not connect to the database")?;
+    let store = CredentialStore::new(config.cache_path.into(), auth, conn)?;
 
     let mut listener = Listener::new(&config.socket_path)?;
 
