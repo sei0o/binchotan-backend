@@ -39,11 +39,11 @@ pub enum Method {
     #[serde(rename = "v0.account.list")]
     AccountList(AccountListParams),
     #[serde(rename = "v0.account.add")]
-    AccountAdd(EmptyParams),
+    AccountAdd(AccountAddParams),
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PlainParams {
+struct PlainParams {
     session_key: String,
     http_method: HttpMethod,
     endpoint: String,
@@ -52,20 +52,25 @@ pub struct PlainParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct HomeTimelineParams {
+struct HomeTimelineParams {
     session_key: String,
     #[serde(default)]
     api_params: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AccountListParams {
+struct AccountListParams {
     session_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AccountAddParams {
+    session_key: Option<String>,
 }
 
 // TODO: ensure params are empty in a smarter way
 #[derive(Debug, Clone, Deserialize)]
-pub struct EmptyParams {
+struct EmptyParams {
     #[serde(default)]
     params: HashMap<String, serde_json::Value>,
     #[serde(skip)]
@@ -395,13 +400,13 @@ impl Handler {
     async fn handle_account_add(
         &mut self,
         id: String,
-        params: EmptyParams,
+        params: AccountAddParams,
     ) -> Result<Response, AppError> {
-        if !params.validate() {
-            return Err(HandlerError::ParamsMismatch(id).into());
-        }
+        let AccountAddParams {
+            session_key: owner_key,
+        } = params;
 
-        let (user_id, session_key) = self.store.auth().await?;
+        let (user_id, session_key) = self.store.auth(owner_key).await?;
         let content = ResponseContent::AccountAdd {
             user_id,
             session_key,

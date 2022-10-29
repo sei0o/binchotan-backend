@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, path::PathBuf};
 
-use sqlx::{PgPool, Postgres};
+use sqlx::PgPool;
 use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
@@ -10,7 +10,6 @@ use crate::{
     auth::Auth,
     cache::{Cache, CacheManager, CacheManagerError, Credential, CredentialState},
     error::AppError,
-    models::Account,
 };
 
 #[derive(Debug, Error)]
@@ -153,9 +152,9 @@ impl CredentialStore {
         unreachable!();
     }
 
-    pub async fn auth(&mut self) -> Result<(String, String), AppError> {
+    pub async fn auth(&mut self, owner_key: Option<String>) -> Result<(String, String), AppError> {
         let (acc, refr) = self.auth.generate_tokens().await?;
-        let (user_id, session_key) = self.add_credential(acc, refr).await?;
+        let (user_id, session_key) = self.add_credential(acc, refr, owner_key).await?;
 
         Ok((user_id, session_key))
     }
@@ -164,22 +163,39 @@ impl CredentialStore {
         &mut self,
         access_token: String,
         refresh_token: String,
+        owner_key: Option<String>,
     ) -> Result<(String, String), AppError> {
         let client = ApiClient::new(access_token.clone()).await?;
         let session_key = Uuid::new_v4().to_string();
 
+        let owner_id = match owner_key {
+            Some(key) => sqlx::query!(
+                r#"
+                    select id from accounts where session_key = $1
+                "#,
+                key
+            )
+            .fetch_one(&self.conn)
+            .await
+            .map(|rec| rec.id)
+            .map(Some)
+            .map_err(maybe_notfound(key))?,
+            None => None,
+        };
+
         sqlx::query!(
             r#"
             insert into accounts
-                (twitter_id, access_token, refresh_token, session_key)
-            values ($1, $2, $3, $4)
+                (twitter_id, access_token, refresh_token, session_key, owned_by)
+            values ($1, $2, $3, $4, $5)
             on conflict (twitter_id) do
-                update set access_token = $2, refresh_token = $3, session_key = $4
+                update set access_token = $2, refresh_token = $3, session_key = $4, owned_by = $5
             "#,
             client.user_id,
             access_token,
             refresh_token,
-            session_key
+            session_key,
+            owner_id
         )
         .execute(&self.conn)
         .await
@@ -187,4 +203,12 @@ impl CredentialStore {
 
         Ok((client.user_id, session_key))
     }
+}
+
+fn maybe_notfound(session_key: String) -> Box<dyn Fn(sqlx::Error) -> CredentialStoreError> {
+    let key = session_key.clone();
+    Box::new(move |err| match err {
+        sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(key.clone()),
+        other => other.into(),
+    })
 }
