@@ -19,7 +19,7 @@ pub enum AppError {
     Auth(#[from] AuthError),
     #[error("api client error")]
     ApiClient(#[from] ApiClientError),
-    #[error("handler error")]
+    #[error("handler error: {0}")]
     Handler(#[from] HandlerError),
     #[error("filter error: {0}")]
     Filter(#[from] FilterError),

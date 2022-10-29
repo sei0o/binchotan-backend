@@ -53,30 +53,50 @@ impl CredentialStore {
         })
     }
 
-    // Returns Twitter account IDs owned by the current user.
-    pub async fn user_ids(&self) -> Result<Vec<String>, CredentialStoreError> {
-        // TODO: authenticate
-        let ids = sqlx::query!("select twitter_id from accounts")
-            .fetch_all(&self.conn)
-            .await?
-            .into_iter()
-            .map(|rec| rec.twitter_id)
-            .collect();
-
-        Ok(ids)
-    }
-
-    pub async fn client_for(&self, user_id: &str) -> Result<ApiClient, AppError> {
+    pub async fn id_for(&self, session_key: &str) -> Result<String, CredentialStoreError> {
         let rec = sqlx::query!(
             r#"
-            select * from accounts where twitter_id = $1
+            select twitter_id from accounts where session_key = $1
             "#,
-            user_id
+            session_key
         )
         .fetch_one(&self.conn)
         .await
         .map_err(|err| match err {
-            sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(user_id.into()),
+            sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(session_key.into()),
+            other => other.into(),
+        })?;
+
+        Ok(rec.twitter_id)
+    }
+
+    // Returns Twitter accounts (id and session key) available to the current user (the account which they were authenticated and ones they own).
+    pub async fn accounts(
+        &self,
+        session_key: &str,
+    ) -> Result<HashMap<String, String>, CredentialStoreError> {
+        let accounts = sqlx::query!("select twitter_id, session_key from accounts where session_key = $1 or owned_by = (select id from accounts where session_key = $1)", session_key)
+            .fetch_all(&self.conn)
+            .await?
+            .into_iter()
+            // TODO: authenticate if needed
+            .map(|rec| (rec.twitter_id, rec.session_key.unwrap_or("".to_owned())))
+            .collect();
+
+        Ok(accounts)
+    }
+
+    pub async fn client_for(&self, session_key: &str) -> Result<ApiClient, AppError> {
+        let rec = sqlx::query!(
+            r#"
+            select * from accounts where session_key = $1
+            "#,
+            session_key
+        )
+        .fetch_one(&self.conn)
+        .await
+        .map_err(|err| match err {
+            sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(session_key.into()),
             other => other.into(),
         })?;
 
@@ -97,7 +117,7 @@ impl CredentialStore {
         }
 
         if state == CredentialState::Valid {
-            info!("found valid token for {user_id}");
+            info!("found valid token for {session_key}");
             match ApiClient::new(cred.access_token.clone()).await {
                 Ok(client) => return Ok(client),
                 Err(_) => state = CredentialState::Expired,
@@ -105,18 +125,18 @@ impl CredentialStore {
         }
 
         if state == CredentialState::Expired {
-            info!("found expired token for {user_id}, refreshing...");
+            info!("found expired token for {session_key}, refreshing...");
             match self.auth.refresh_tokens(cred.refresh_token.clone()).await {
                 Ok((acc, refr)) => {
                     sqlx::query!(
                         r#"
                         update accounts
                             set access_token = $1, refresh_token = $2
-                            where twitter_id = $3
+                            where session_key = $3
                     "#,
                         acc,
                         refr,
-                        user_id
+                        session_key
                     )
                     .execute(&self.conn)
                     .await

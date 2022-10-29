@@ -43,13 +43,15 @@ pub enum Method {
 #[serde(untagged)]
 pub enum RequestParams {
     Plain {
-        user_id: String,
+        session_key: String,
         http_method: HttpMethod,
         endpoint: String,
+        #[serde(default)]
         api_params: HashMap<String, serde_json::Value>,
     },
-    MapWithId {
-        user_id: String,
+    MapWithSession {
+        session_key: String,
+        #[serde(default)]
         api_params: HashMap<String, serde_json::Value>,
     },
     Map(HashMap<String, serde_json::Value>),
@@ -84,7 +86,12 @@ pub enum ResponseContent {
     #[serde(rename = "result")]
     Status { version: String },
     #[serde(rename = "result")]
-    AccountList { user_ids: Vec<String> },
+    AccountList {
+        // Account id which the user used for authorization.
+        owner: String,
+        // Session keys for the owner account and accounts it owns.
+        session_keys: HashMap<String, String>,
+    },
     #[serde(rename = "result")]
     AccountAdd {
         user_id: String,
@@ -240,12 +247,12 @@ impl Handler {
     async fn handle_plain(&self, req: Request) -> Result<Response, AppError> {
         match req.params {
             RequestParams::Plain {
-                user_id,
+                session_key,
                 http_method,
                 endpoint,
                 api_params,
             } => {
-                let client = self.store.client_for(&user_id).await?;
+                let client = self.store.client_for(&session_key).await?;
                 let api_params =
                     serde_json::to_string(&api_params).map_err(HandlerError::ParamsParse)?;
                 let (resp, remaining, reset) =
@@ -270,14 +277,14 @@ impl Handler {
     }
 
     async fn handle_timeline(&self, req: Request) -> Result<Response, AppError> {
-        let (user_id, mut params) = match req.params {
-            RequestParams::MapWithId {
-                user_id,
+        let (session_key, mut params) = match req.params {
+            RequestParams::MapWithSession {
+                session_key,
                 api_params,
-            } => (user_id, api_params),
+            } => (session_key, api_params),
             _ => return Err(HandlerError::ParamsMismatch(req).into()),
         };
-        let client = self.store.client_for(&user_id).await?;
+        let client = self.store.client_for(&session_key).await?;
         let (
             HomeTimelineResponseBody {
                 data: tweets,
@@ -349,13 +356,17 @@ impl Handler {
     async fn handle_account_list(&self, req: Request) -> Result<Response, AppError> {
         let req_ = req.clone();
         match req.params {
-            RequestParams::Map(prms) => {
-                if !prms.is_empty() {
+            RequestParams::MapWithSession {
+                session_key,
+                api_params,
+            } => {
+                if !api_params.is_empty() {
                     return Err(HandlerError::ParamsMismatch(req_).into());
                 }
 
                 let content = ResponseContent::AccountList {
-                    user_ids: self.store.user_ids().await?,
+                    owner: self.store.id_for(&session_key).await?,
+                    session_keys: self.store.accounts(&session_key).await?,
                 };
 
                 Ok(Response {
