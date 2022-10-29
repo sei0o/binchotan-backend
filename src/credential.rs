@@ -61,10 +61,7 @@ impl CredentialStore {
         )
         .fetch_one(&self.conn)
         .await
-        .map_err(|err| match err {
-            sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(session_key.into()),
-            other => other.into(),
-        })?;
+        .map_err(maybe_notfound(session_key.into()))?;
 
         Ok(rec.twitter_id)
     }
