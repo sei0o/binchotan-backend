@@ -4,11 +4,14 @@ use crate::{
     error::AppError,
     filter::{Filter, FilterError},
     methods::HttpMethod,
+    models::Account,
     VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
+    io::Empty,
     path::PathBuf,
 };
 use thiserror::Error;
@@ -19,47 +22,70 @@ pub const JSONRPC_VERSION: &str = "2.0";
 #[derive(Debug, Clone, Deserialize)]
 pub struct Request {
     pub jsonrpc: String,
+    #[serde(flatten)]
     pub method: Method,
-    #[serde(default)]
-    pub params: RequestParams,
     pub id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "method", content = "params")]
 pub enum Method {
     #[serde(rename = "v0.plain")]
-    Plain,
+    Plain(PlainParams),
     #[serde(rename = "v0.home_timeline")]
-    HomeTimeline,
+    HomeTimeline(HomeTimelineParams),
     #[serde(rename = "v0.status")]
-    Status,
+    Status(EmptyParams),
     #[serde(rename = "v0.account.list")]
-    AccountList,
+    AccountList(AccountListParams),
     #[serde(rename = "v0.account.add")]
-    AccountAdd,
+    AccountAdd(EmptyParams),
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum RequestParams {
-    Plain {
-        session_key: String,
-        http_method: HttpMethod,
-        endpoint: String,
-        #[serde(default)]
-        api_params: HashMap<String, serde_json::Value>,
-    },
-    MapWithSession {
-        session_key: String,
-        #[serde(default)]
-        api_params: HashMap<String, serde_json::Value>,
-    },
-    Map(HashMap<String, serde_json::Value>),
+pub struct PlainParams {
+    session_key: String,
+    http_method: HttpMethod,
+    endpoint: String,
+    #[serde(default)]
+    api_params: HashMap<String, serde_json::Value>,
 }
 
-impl Default for RequestParams {
-    fn default() -> Self {
-        RequestParams::Map(HashMap::new())
+#[derive(Debug, Clone, Deserialize)]
+pub struct HomeTimelineParams {
+    session_key: String,
+    #[serde(default)]
+    api_params: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountListParams {
+    session_key: String,
+}
+
+// TODO: ensure params are empty in a smarter way
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmptyParams {
+    #[serde(default)]
+    params: HashMap<String, serde_json::Value>,
+    #[serde(skip)]
+    validated: RefCell<bool>,
+}
+
+impl EmptyParams {
+    pub fn validate(&self) -> bool {
+        let mut validated = self.validated.borrow_mut();
+        *validated = true;
+        self.params.is_empty()
+    }
+}
+
+impl Drop for EmptyParams {
+    fn drop(&mut self) {
+        let validated = self.validated.borrow();
+        if !*validated {
+            unreachable!("EmptyParams must be validated (ensured that they are empty)")
+        }
     }
 }
 
@@ -199,8 +225,8 @@ pub enum HandlerError {
     Version,
     #[error("unregistered user id: {0}")]
     UnknownAccount(String),
-    #[error("wrong parameters in the JSON-RPC request for method {:?}: {:?}", .0.method, .0.params)]
-    ParamsMismatch(Request),
+    #[error("wrong parameters in request (id = {0})")]
+    ParamsMismatch(String),
 }
 
 pub struct Handler {
@@ -234,56 +260,53 @@ impl Handler {
         }
 
         let resp = match req.method {
-            Method::Plain => self.handle_plain(req).await?,
-            Method::HomeTimeline => self.handle_timeline(req).await?,
-            Method::Status => self.handle_status(req).await?,
-            Method::AccountList => self.handle_account_list(req).await?,
-            Method::AccountAdd => self.handle_account_add(req).await?,
+            Method::Plain(params) => self.handle_plain(req.id, params).await?,
+            Method::HomeTimeline(params) => self.handle_timeline(req.id, params).await?,
+            Method::Status(params) => self.handle_status(req.id, params).await?,
+            Method::AccountList(params) => self.handle_account_list(req.id, params).await?,
+            Method::AccountAdd(params) => self.handle_account_add(req.id, params).await?,
         };
 
         Ok(resp)
     }
 
-    async fn handle_plain(&self, req: Request) -> Result<Response, AppError> {
-        match req.params {
-            RequestParams::Plain {
-                session_key,
-                http_method,
-                endpoint,
-                api_params,
-            } => {
-                let client = self.store.client_for(&session_key).await?;
-                let api_params =
-                    serde_json::to_string(&api_params).map_err(HandlerError::ParamsParse)?;
-                let (resp, remaining, reset) =
-                    client.call(&http_method, &endpoint, api_params).await?;
-                info!("got response for plain request with id {}", req.id);
+    async fn handle_plain(&self, id: String, params: PlainParams) -> Result<Response, AppError> {
+        let PlainParams {
+            session_key,
+            http_method,
+            endpoint,
+            api_params,
+        } = params;
 
-                let content = ResponseContent::Plain {
-                    meta: ResponsePlainMeta {
-                        api_calls_remaining: remaining,
-                        api_calls_reset: reset,
-                    },
-                    body: resp,
-                };
-                Ok(Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content,
-                    id: req.id,
-                })
-            }
-            _ => Err(HandlerError::ParamsMismatch(req).into()),
-        }
+        let client = self.store.client_for(&session_key).await?;
+        let api_params = serde_json::to_string(&api_params).map_err(HandlerError::ParamsParse)?;
+        let (resp, remaining, reset) = client.call(&http_method, &endpoint, api_params).await?;
+        info!("got response for plain request with id {}", id);
+
+        let content = ResponseContent::Plain {
+            meta: ResponsePlainMeta {
+                api_calls_remaining: remaining,
+                api_calls_reset: reset,
+            },
+            body: resp,
+        };
+        Ok(Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            content,
+            id,
+        })
     }
 
-    async fn handle_timeline(&self, req: Request) -> Result<Response, AppError> {
-        let (session_key, mut params) = match req.params {
-            RequestParams::MapWithSession {
-                session_key,
-                api_params,
-            } => (session_key, api_params),
-            _ => return Err(HandlerError::ParamsMismatch(req).into()),
-        };
+    async fn handle_timeline(
+        &self,
+        id: String,
+        params: HomeTimelineParams,
+    ) -> Result<Response, AppError> {
+        let HomeTimelineParams {
+            session_key,
+            mut api_params,
+        } = params;
+
         let client = self.store.client_for(&session_key).await?;
         let (
             HomeTimelineResponseBody {
@@ -293,7 +316,7 @@ impl Handler {
             },
             remaining,
             reset,
-        ) = client.timeline(&mut params).await?;
+        ) = client.timeline(&mut api_params).await?;
         info!(
             "successfully retrieved {} tweets (reverse_chronological)",
             tweets.len(),
@@ -327,79 +350,67 @@ impl Handler {
         Ok(Response {
             jsonrpc: JSONRPC_VERSION.to_string(),
             content,
-            id: req.id,
+            id,
         })
     }
 
-    async fn handle_status(&self, req: Request) -> Result<Response, HandlerError> {
-        let req_ = req.clone();
-        match req.params {
-            RequestParams::Map(prms) => {
-                if !prms.is_empty() {
-                    return Err(HandlerError::ParamsMismatch(req_));
-                }
-
-                let content = ResponseContent::Status {
-                    version: VERSION.to_string(),
-                };
-
-                Ok(Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content,
-                    id: req.id,
-                })
-            }
-            _ => Err(HandlerError::ParamsMismatch(req)),
+    async fn handle_status(
+        &self,
+        id: String,
+        params: EmptyParams,
+    ) -> Result<Response, HandlerError> {
+        if !params.validate() {
+            return Err(HandlerError::ParamsMismatch(id));
         }
+
+        let content = ResponseContent::Status {
+            version: VERSION.to_string(),
+        };
+
+        Ok(Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            content,
+            id,
+        })
     }
 
-    async fn handle_account_list(&self, req: Request) -> Result<Response, AppError> {
-        let req_ = req.clone();
-        match req.params {
-            RequestParams::MapWithSession {
-                session_key,
-                api_params,
-            } => {
-                if !api_params.is_empty() {
-                    return Err(HandlerError::ParamsMismatch(req_).into());
-                }
+    async fn handle_account_list(
+        &self,
+        id: String,
+        params: AccountListParams,
+    ) -> Result<Response, AppError> {
+        let AccountListParams { session_key } = params;
+        let content = ResponseContent::AccountList {
+            owner: self.store.id_for(&session_key).await?,
+            session_keys: self.store.accounts(&session_key).await?,
+        };
 
-                let content = ResponseContent::AccountList {
-                    owner: self.store.id_for(&session_key).await?,
-                    session_keys: self.store.accounts(&session_key).await?,
-                };
-
-                Ok(Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content,
-                    id: req.id,
-                })
-            }
-            _ => Err(HandlerError::ParamsMismatch(req).into()),
-        }
+        Ok(Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            content,
+            id,
+        })
     }
 
-    async fn handle_account_add(&mut self, req: Request) -> Result<Response, AppError> {
-        let req_ = req.clone();
-        match req.params {
-            RequestParams::Map(prms) => {
-                if !prms.is_empty() {
-                    return Err(HandlerError::ParamsMismatch(req_).into());
-                }
-
-                let (user_id, session_key) = self.store.auth().await?;
-                let content = ResponseContent::AccountAdd {
-                    user_id,
-                    session_key,
-                };
-
-                Ok(Response {
-                    jsonrpc: JSONRPC_VERSION.to_string(),
-                    content,
-                    id: req.id,
-                })
-            }
-            _ => Err(HandlerError::ParamsMismatch(req).into()),
+    async fn handle_account_add(
+        &mut self,
+        id: String,
+        params: EmptyParams,
+    ) -> Result<Response, AppError> {
+        if !params.validate() {
+            return Err(HandlerError::ParamsMismatch(id).into());
         }
+
+        let (user_id, session_key) = self.store.auth().await?;
+        let content = ResponseContent::AccountAdd {
+            user_id,
+            session_key,
+        };
+
+        Ok(Response {
+            jsonrpc: JSONRPC_VERSION.to_string(),
+            content,
+            id,
+        })
     }
 }
