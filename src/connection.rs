@@ -4,14 +4,12 @@ use crate::{
     error::AppError,
     filter::{Filter, FilterError},
     methods::HttpMethod,
-    models::Account,
     VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    io::Empty,
     path::PathBuf,
 };
 use thiserror::Error;
@@ -43,7 +41,7 @@ pub enum Method {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct PlainParams {
+pub struct PlainParams {
     session_key: String,
     http_method: HttpMethod,
     endpoint: String,
@@ -52,25 +50,25 @@ struct PlainParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct HomeTimelineParams {
+pub struct HomeTimelineParams {
     session_key: String,
     #[serde(default)]
     api_params: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct AccountListParams {
+pub struct AccountListParams {
     session_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct AccountAddParams {
+pub struct AccountAddParams {
     session_key: Option<String>,
 }
 
 // TODO: ensure params are empty in a smarter way
 #[derive(Debug, Clone, Deserialize)]
-struct EmptyParams {
+pub struct EmptyParams {
     #[serde(default)]
     params: HashMap<String, serde_json::Value>,
     #[serde(skip)]
