@@ -1,13 +1,14 @@
 use crate::{auth::Auth, config::Config, connection::Request};
 use anyhow::Context;
 use connection::Handler;
-use credential::CredentialStore;
+use credential::{PgsqlCredentialStore, SqliteCredentialStore, CredentialStoreTrait};
 use error::AppError;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use std::{
     io::{BufRead, BufReader, Write},
     os::unix::net::{UnixListener, UnixStream},
     path::{Path, PathBuf},
+    string::String,
 };
 use thiserror::Error;
 use tracing::error;
@@ -48,12 +49,26 @@ async fn start(config: Config) -> Result<(), AppError> {
         config.redirect_host,
         config.scopes.clone(),
     );
-    let conn = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&config.database_url)
-        .await
-        .context("could not connect to the database")?;
-    let store = CredentialStore::new(config.cache_path.into(), auth, conn)?;
+
+    let store: Box<dyn CredentialStoreTrait>;
+    match config.database_type.as_str() {
+        "postgres" => {
+            let conn = PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&config.database_url)
+                .await
+                .context("could not connect to the database")?;
+            store = Box::new(PgsqlCredentialStore::new(config.cache_path.into(), auth, conn)?);
+        }
+        "sqlite" => {
+            let conn = SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect(&config.database_url)
+                .await
+                .context("could not connect to the database")?;
+            store = Box::new(SqliteCredentialStore::new(config.cache_path.into(), auth, conn)?);
+        }
+    }
 
     let mut listener = Listener::new(&config.socket_path)?;
 
