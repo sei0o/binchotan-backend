@@ -14,6 +14,7 @@ pub struct Config {
     pub filter_dir: PathBuf,
     pub scopes: HashSet<String>,
     pub database_url: String,
+    pub database_type: String,
 }
 
 impl Config {

@@ -23,5 +23,6 @@ mlua = { version = "~0.8.3", features = ["serialize", "lua54", "vendored"] }
 tiny_http = "0.11"
 open = "3.0.2"
 config = "0.13.2"
-sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "postgres"] }
+sqlx = { version = "0.6", features = ["runtime-tokio-rustls", "postgres", "sqlite"] }
 uuid = { version = "1.2.1", features = ["v4", "fast-rng"] }
+async-trait = "0.1.59"

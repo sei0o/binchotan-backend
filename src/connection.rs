@@ -1,6 +1,6 @@
 use crate::{
     api::HomeTimelineResponseBody,
-    credential::CredentialStore,
+    credential::CredentialStoreTrait,
     error::AppError,
     filter::{Filter, FilterError},
     methods::HttpMethod,
@@ -233,7 +233,7 @@ pub enum HandlerError {
 }
 
 pub struct Handler {
-    pub store: CredentialStore,
+    pub store: Box<dyn CredentialStoreTrait>,
     pub filter_path: PathBuf,
     pub scopes: HashSet<String>,
 }
