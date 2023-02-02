@@ -9,7 +9,7 @@ use thiserror::Error;
 pub enum AppError {
     #[error("could not load configuration: {0}")]
     Config(#[from] config::ConfigError),
-    #[error("listener error")]
+    #[error("listener error: {0}")]
     Listener(#[from] ListenerError),
     #[error("cache manager error")]
     CacheManager(#[from] CacheManagerError),
@@ -17,7 +17,7 @@ pub enum AppError {
     CredentialStore(#[from] CredentialStoreError),
     #[error("auth error")]
     Auth(#[from] AuthError),
-    #[error("api client error")]
+    #[error("api client error: {0}")]
     ApiClient(#[from] ApiClientError),
     #[error("handler error: {0}")]
     Handler(#[from] HandlerError),

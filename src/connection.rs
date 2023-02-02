@@ -25,6 +25,8 @@ pub struct Request {
     pub id: String,
 }
 
+// TODO: 'params' field should be able to be omitted (as JSON-RPC spec says) but
+// serde complains about that
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Method {
@@ -33,7 +35,7 @@ pub enum Method {
     #[serde(rename = "v0.home_timeline")]
     HomeTimeline(HomeTimelineParams),
     #[serde(rename = "v0.status")]
-    Status(EmptyParams),
+    Status(#[serde(default)] EmptyParams),
     #[serde(rename = "v0.account.list")]
     AccountList(AccountListParams),
     #[serde(rename = "v0.account.add")]
@@ -67,7 +69,7 @@ pub struct AccountAddParams {
 }
 
 // TODO: ensure params are empty in a smarter way
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 pub struct EmptyParams {
     #[serde(default)]
     params: HashMap<String, serde_json::Value>,
@@ -123,7 +125,10 @@ pub enum ResponseContent {
     },
     #[serde(rename = "result")]
     AccountAdd {
-        user_id: String,
+        // Authorization URL. Client should redirect the user to this URL.
+        auth_url: String,
+        // Session key for RPC calls. This can be passed to other endpoints
+        // once the user has authenciated on Twitter and the redirect server receives an access token.
         session_key: String,
     },
     #[serde(rename = "error")]
@@ -404,9 +409,9 @@ impl Handler {
             session_key: owner_key,
         } = params;
 
-        let (user_id, session_key) = self.store.auth(owner_key).await?;
+        let (auth_url, session_key) = self.store.start_auth(owner_key).await?;
         let content = ResponseContent::AccountAdd {
-            user_id,
+            auth_url,
             session_key,
         };
 

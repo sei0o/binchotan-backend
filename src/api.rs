@@ -62,6 +62,7 @@ impl ApiClient {
 
     async fn id_for_token(client: &Client, access_token: &str) -> Result<String, ApiClientError> {
         let endpoint = "https://api.twitter.com/2/users/me";
+        tracing::warn!("access token: {}", access_token);
         let resp = client
             .get(endpoint)
             .bearer_auth(access_token.to_owned())

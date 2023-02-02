@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, path::PathBuf};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, sync::Arc};
 
 use sqlx::PgPool;
 use thiserror::Error;
@@ -26,7 +26,7 @@ pub struct CredentialStore {
     cm: CacheManager,
     credentials: RefCell<HashMap<String, Credential>>,
     auth: Auth,
-    conn: PgPool,
+    conn: Arc<PgPool>,
 }
 
 impl CredentialStore {
@@ -48,7 +48,7 @@ impl CredentialStore {
             cm,
             auth,
             credentials: RefCell::new(credentials),
-            conn,
+            conn: Arc::new(conn),
         })
     }
 
@@ -59,7 +59,7 @@ impl CredentialStore {
             "#,
             session_key
         )
-        .fetch_one(&self.conn)
+        .fetch_one(self.conn.as_ref())
         .await
         .map_err(maybe_notfound(session_key.into()))?;
 
@@ -72,7 +72,7 @@ impl CredentialStore {
         session_key: &str,
     ) -> Result<HashMap<String, String>, CredentialStoreError> {
         let accounts = sqlx::query!("select twitter_id, session_key from accounts where session_key = $1 or owned_by = (select id from accounts where session_key = $1)", session_key)
-            .fetch_all(&self.conn)
+            .fetch_all(self.conn.as_ref())
             .await?
             .into_iter()
             // TODO: authenticate if needed
@@ -89,7 +89,7 @@ impl CredentialStore {
             "#,
             session_key
         )
-        .fetch_one(&self.conn)
+        .fetch_one(self.conn.as_ref())
         .await
         .map_err(|err| match err {
             sqlx::Error::RowNotFound => CredentialStoreError::UnknownAccount(session_key.into()),
@@ -134,7 +134,7 @@ impl CredentialStore {
                         refr,
                         session_key
                     )
-                    .execute(&self.conn)
+                    .execute(self.conn.as_ref())
                     .await
                     .map_err(CredentialStoreError::Database)?;
 
@@ -149,57 +149,77 @@ impl CredentialStore {
         unreachable!();
     }
 
-    pub async fn auth(&mut self, owner_key: Option<String>) -> Result<(String, String), AppError> {
-        let (acc, refr) = self.auth.generate_tokens().await?;
-        let (user_id, session_key) = self.add_credential(acc, refr, owner_key).await?;
-
-        Ok((user_id, session_key))
-    }
-
-    pub async fn add_credential(
+    pub async fn start_auth(
         &mut self,
-        access_token: String,
-        refresh_token: String,
         owner_key: Option<String>,
     ) -> Result<(String, String), AppError> {
-        let client = ApiClient::new(access_token.clone()).await?;
         let session_key = Uuid::new_v4().to_string();
+        let auth_url = self
+            .auth
+            .start_auth({
+                let conn = self.conn.clone();
+                let session_key = session_key.clone();
+                move |acc, refr| {
+                    tokio::spawn(async move {
+                        info!("token retrieved: {}, {}", acc, refr);
+                        match add_credential(acc, refr, owner_key, conn, session_key).await {
+                            Ok(_) => {}
+                            Err(err) => {
+                                tracing::error!("error while adding credentials: {}", err);
+                            }
+                        }
+                    });
+                }
+            })
+            .await?;
 
-        let owner_id = match owner_key {
-            Some(key) => sqlx::query!(
-                r#"
+        Ok((auth_url, session_key))
+    }
+}
+
+async fn add_credential(
+    access_token: String,
+    refresh_token: String,
+    owner_key: Option<String>,
+    conn: Arc<PgPool>,
+    session_key: String,
+) -> Result<(), AppError> {
+    let client = ApiClient::new(access_token.clone()).await?;
+
+    let owner_id = match owner_key {
+        Some(key) => sqlx::query!(
+            r#"
                     select id from accounts where session_key = $1
                 "#,
-                key
-            )
-            .fetch_one(&self.conn)
-            .await
-            .map(|rec| rec.id)
-            .map(Some)
-            .map_err(maybe_notfound(key))?,
-            None => None,
-        };
+            key
+        )
+        .fetch_one(conn.as_ref())
+        .await
+        .map(|rec| rec.id)
+        .map(Some)
+        .map_err(maybe_notfound(key))?,
+        None => None,
+    };
 
-        sqlx::query!(
-            r#"
+    sqlx::query!(
+        r#"
             insert into accounts
                 (twitter_id, access_token, refresh_token, session_key, owned_by)
             values ($1, $2, $3, $4, $5)
             on conflict (twitter_id) do
                 update set access_token = $2, refresh_token = $3, session_key = $4, owned_by = $5
             "#,
-            client.user_id,
-            access_token,
-            refresh_token,
-            session_key,
-            owner_id
-        )
-        .execute(&self.conn)
-        .await
-        .map_err(CredentialStoreError::Database)?;
+        client.user_id,
+        access_token,
+        refresh_token,
+        session_key,
+        owner_id
+    )
+    .execute(conn.as_ref())
+    .await
+    .map_err(CredentialStoreError::Database)?;
 
-        Ok((client.user_id, session_key))
-    }
+    Ok(())
 }
 
 fn maybe_notfound(session_key: String) -> Box<dyn Fn(sqlx::Error) -> CredentialStoreError> {

@@ -1,2 +1,4 @@
 scopes = [ "users.read", "tweet.read", "offline.access" ]
+
+# Note that localhost cannot be used as redirect URLs. Use 127.0.0.1 instead.
 redirect_host = "127.0.0.1:31337"

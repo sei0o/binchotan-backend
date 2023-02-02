@@ -82,7 +82,7 @@ async fn start(config: Config) -> Result<(), AppError> {
 pub enum ListenerError {
     #[error("could not bind to the socket. another backend might be running?")]
     Bind(#[source] std::io::Error),
-    #[error("could not parse the socket payload")]
+    #[error("could not parse the socket payload: {0}")]
     Parse(#[source] serde_json::Error),
 }
 
